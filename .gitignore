@@ -1,0 +1,29 @@
+# ── Python ──
+__pycache__/
+*.pyc
+libar-sample/.venv/
+.venv/
+
+# ── 모델 바이너리 (노트북으로 재생성 / 용량 큼) ──
+*.pt
+*.onnx
+
+# ── 생성 산출물 (스크립트로 재생성 가능) ──
+libar-sample/out/
+libar-sample/out_*/
+libar-sample/test_shelf*.jpg
+libar-sample/labels_print.png
+*.log
+
+# ── 학습 데이터셋 (Roboflow에서 다운로드) ──
+libar-sample/Book-spline-detection*/
+libar-sample/datasets/
+
+# ── 공모전 원본 자료 (우리 산출물 아님) ──
+2026_도서관_데이터_활용_공모전_포스터.jpg
+*.hwpx
+files.zip
+
+# ── 비밀값 ──
+.env
+*secret*

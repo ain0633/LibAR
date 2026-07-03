@@ -1,0 +1,10 @@
+# 기본 (탐지 + EasyOCR 파이프라인)
+ultralytics
+easyocr
+opencv-python
+pillow
+numpy
+
+# 선택: 한국어 PP-OCRv5 OCR (--ocr ppocr 사용 시)
+# Windows/Python 3.13 지원 확인됨 (paddlepaddle 3.3.1 cp313 휠)
+# pip install paddlepaddle==3.3.1 paddleocr
