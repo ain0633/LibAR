@@ -27,3 +27,35 @@ files.zip
 # ── 비밀값 ──
 .env
 *secret*
+
+# ── 대용량 바이너리·아카이브 (모델·데이터셋은 드라이브/릴리스로 공유) ──
+*.zip
+*.pb
+*.pt.bak
+libar-sample/korean_lowres_rec_infer/
+
+# ── 원본 촬영 데이터 (도서관 제공 — 저장소 제외) ──
+대림데이터/
+원본영상/
+공모전자료/
+
+# ── 개인 메모 (API 키 포함 가능성) ──
+데일리리포트*.md
+
+# ── 장서 원본 데이터 (도서관 제공 CSV) ──
+libar-sample/daelim_catalog.csv
+libar-sample/books_4558.csv
+libar-sample/newton_*.csv
+
+# ── 실험 중간 산출물 (재생성 가능) ──
+libar-sample/*_log.txt
+libar-sample/daelim_v3_results/
+libar-sample/dataset_*/
+libar-sample/frames/
+libar-sample/synth_rec/
+libar-sample/shelf_4558.*
+libar-sample/daelim_labels*.json
+libar-sample/daelim_det0_boxes.json
+libar-sample/fix_column_result.json
+libar-sample/vol_crop_results.json
+libar-sample/학습기록_*.csv

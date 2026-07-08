@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LibAR 개발 여정과 구현 계획안 (2026-07-08)</title>
+<style>
+body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;max-width:1000px;margin:0 auto;
+     padding:24px 20px;color:#222;line-height:1.7;background:#fafafa}
+h1{font-size:1.7em;border-bottom:3px solid #2b6cb0;padding-bottom:8px}
+h2{font-size:1.3em;margin-top:2.2em;border-left:5px solid #2b6cb0;padding-left:12px}
+h3{font-size:1.1em;margin-top:1.6em;color:#1a4a7a}
+blockquote{background:#eef4fb;border-left:4px solid #2b6cb0;margin:12px 0;padding:12px 16px;border-radius:0 6px 6px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0;background:#fff;font-size:.93em}
+th,td{border:1px solid #d0d7de;padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#f0f4f8}
+.big{font-size:1.1em;font-weight:bold;color:#2b6cb0}
+.concept{background:#fdf6ec;border-left:4px solid #d69e2e;padding:12px 16px;margin:14px 0;border-radius:0 6px 6px 0}
+.concept b:first-child{color:#975a16}
+.pipe{background:#1a202c;color:#a7f3d0;font-family:Consolas,monospace;font-size:.85em;
+      padding:16px;border-radius:8px;overflow-x:auto;white-space:pre;line-height:1.5}
+.phase{border:1px solid #d0d7de;border-radius:10px;background:#fff;padding:14px 18px;margin:14px 0}
+.phase h3{margin-top:0}
+.tag{display:inline-block;background:#2b6cb0;color:#fff;border-radius:12px;padding:1px 10px;font-size:.8em;margin-right:6px}
+.tag.done{background:#28a058}.tag.now{background:#d69e2e}.tag.todo{background:#888}
+.timeline{margin:20px 0;border-left:3px solid #2b6cb0;padding-left:22px}
+.tl-item{position:relative;margin-bottom:22px}
+.tl-item::before{content:'';position:absolute;left:-29px;top:5px;width:12px;height:12px;border-radius:50%;background:#2b6cb0}
+.tl-item.done::before{background:#28a058}
+.tl-item.now::before{background:#d69e2e;box-shadow:0 0 0 4px #f6e5bd}
+.tl-when{font-size:.85em;color:#777;font-weight:bold}
+.kpi{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+.kpi div{flex:1;min-width:150px;background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:12px;text-align:center}
+.kpi .n{font-size:1.5em;font-weight:bold;color:#2b6cb0}
+.kpi .l{font-size:.85em;color:#666}
+footer{margin-top:2.5em;font-size:.85em;color:#777;border-top:1px solid #ddd;padding-top:10px}
+</style></head><body>
+
+<h1>📚 LibAR — 개발 여정과 대림도서관 구현 계획안 <small style="font-size:.5em;color:#666">2026-07-08 · 팀 공유용</small></h1>
+
+<blockquote><b>LibAR 한 줄 정의:</b> 스마트폰 카메라로 서가를 비추면, 온디바이스 AI가 책등을 탐지하고 청구기호를 판독하여
+<b>사서에게는 오배열 도서(빨강)를, 이용자에게는 찾는 책(초록)을</b> 화면 위에 실시간 표시하고,
+축적된 로그를 전국 대출 빅데이터(정보나루)와 결합 분석하는 PWA 서비스.<br>
+<b>실증 대상:</b> 영등포구립 대림도서관 (전국 1,576개 공공도서관 확산의 첫 사례)</blockquote>
+
+<div class="kpi">
+<div><div class="n">100%</div><div class="l">근접 권수 파악 (74/74)</div></div>
+<div><div class="n">94%</div><div class="l">근접 인식률 (목록 보유분)</div></div>
+<div><div class="n">63→102권</div><div class="l">광각 인식 (단일→7장 합산, ~73%)</div></div>
+<div><div class="n">3건</div><div class="l">실물 오배열 자동 검출</div></div>
+<div><div class="n">6건</div><div class="l">장서 DB 이상 발견</div></div>
+<div><div class="n">93% · 6ms</div><div class="l">ONNX 변환 일치율 · 크롭당 속도(CPU)</div></div>
+</div>
+
+<!-- ══════════════ PART 1 ══════════════ -->
+<h2>Part 1. 파이프라인의 개념 — LibAR은 어떻게 책을 읽는가</h2>
+
+<p>LibAR의 인식은 사람이 서가를 점검하는 과정과 같은 4단계입니다. 각 단계는 독립된 부품이라,
+어느 단계가 병목인지 <b>측정</b>하고 그 단계만 갈아끼우는 방식으로 발전해 왔습니다.</p>
+
+<div class="pipe">① 어디에 책이 있나  (검출)   색 기반 라벨줄 탐지 + 숫자 앵커('8'=책 1권)  → [예정] YOLO26n
+② 뭐라고 써있나    (인식)   PaddleOCR — 라벨은 파인튜닝 인식기 / 제목은 범용 인식기 (이원화)
+③ 어느 책인가      (대조)   글자 조각을 책 단위로 조립 → 장서 목록과 매칭 (분류+저자기호+제목)
+④ 제자리에 있나    (판정)   청구기호 배열 순서 검사(LIS) → 오배열 의심 표시 + AR 렌더</div>
+
+<div class="concept"><b>핵심 개념 1 — "모델"과 "로직"은 다른 축이다.</b><br>
+②의 OCR은 글자를 조각으로 받아 적는 속기사일 뿐, 어느 조각이 어느 책인지 모릅니다.
+그걸 조립하는 ③④가 로직(코드)입니다. 우리 성능 향상의 절반은 모델 학습(파인튜닝)에서,
+나머지 절반은 <b>모델을 전혀 다시 학습하지 않고 조립 로직을 고치는 것</b>에서 나왔습니다.
+(예: 숨어 있던 책 4권 발견 = OCR이 이미 읽어놓은 조각을 올바르게 끊어 읽자 나타난 것)</div>
+
+<div class="concept"><b>핵심 개념 2 — 인식의 최종 한계는 픽셀 정보량이다.</b><br>
+라벨 폭 40px(광각)에서는 글자 획 정보 자체가 사진에 없어서, 초해상도 AI 등 어떤 소프트웨어로도 복원이 불가능함을
+실측으로 확인했습니다. 반대로 130px+(근접)면 거의 다 읽힙니다. 그래서 운영 시나리오가
+<b>"걸으며 스캔(근접) = 정밀 모드, 멀리서 한 컷 = 순회 모드"</b> 2단으로 설계됩니다.</div>
+
+<div class="concept"><b>핵심 개념 3 — 두 신호(청구기호+제목)의 상호 보완.</b><br>
+라벨이 뭉개져도 책등 제목은 글자가 커서 살아있고, 제목이 가려져도 라벨은 규격품이라 읽힙니다.
+두 신호를 함께 쓰는 '이중 인식'이 광각에서 +20%p를 만들었고, 오탐은 0으로 유지됩니다.</div>
+
+<!-- ══════════════ PART 2 ══════════════ -->
+<h2>Part 2. 지금까지의 여정 — 병목을 찾고, 부수고, 다음 병목으로</h2>
+
+<div class="phase"><span class="tag done">Phase 0</span><h3>신원도서관 검증 (7/5~6) — "파이프라인이 성립하는가"</h3>
+<b>한 것:</b> 뉴턴 시리즈 59권 서가 1장으로 최초 엔드투엔드 구축. YOLO 2클래스 검출 + OCR + 권차 매칭.<br>
+<b>발견한 병목:</b> 검출 박스가 이웃 라벨 2개에 걸침 → 글자를 잘못 읽는 게 아니라 <b>옆 책 글자가 섞이는</b> 문제.<br>
+<b>해법:</b> 후처리 전역 배정(카탈로그 제약 + 순서 단조성) → 인식 30→41권, 오배열 거짓양성 25%→9%.<br>
+<b>교훈:</b> VLM 서버·CLOVA 등 대안 비교 후 "온디바이스 OCR + 강한 후처리" 노선 확정.</div>
+
+<div class="phase"><span class="tag done">Phase 1</span><h3>대림 1차 — 광각의 벽 (7/7) — "일반 서가에서 되는가"</h3>
+<b>한 것:</b> 실제 대림 서가 광각 7장 + 장서 456권 목록. 신원 학습 YOLO가 라벨 생김새 차이로 전멸(도메인 갭)
+→ 색 기반 검출로 우회, 라벨줄 통째 OCR(스트립 방식)로 문맥 확보.<br>
+<b>성적:</b> 8% → 19%(스트립) → 34%(제목 이중 인식). 멀티프레임 7장 합산 고유 52권.<br>
+<b>발견:</b> ① 병목 = 라벨 해상도(40px)라는 물리 한계 실측 (전처리·초해상도 전부 기각)
+② <b>대출중인 책 2권이 서가에서 발견</b> — 장서 데이터와 실물의 불일치를 자동 검출한 첫 사례.<br>
+<b>교훈:</b> 촬영 프로토콜(근접·동영상)이 모델 개선보다 효율 3배.</div>
+
+<div class="phase"><span class="tag done">Phase 2</span><h3>파인튜닝 — 저해상 특화 인식기 (7/7~8) — "40px 글자를 배울 수 있는가"</h3>
+<b>한 것:</b> 실제 카탈로그 텍스트로 <b>합성 저해상 라벨 5,883장</b> 생성(렌더링→축소→블러→압축 열화)
+→ 한국어 인식기 파인튜닝(Colab GPU).<br>
+<b>성적:</b> 동일 광각 사진에서 청구기호 판독 <b>6% → 30% (5배)</b>. 근접에서는 자모(ㄷ/ㅍ/ㅇ)까지 보정 규칙 없이 직독.<br>
+<b>추가:</b> 파인튜닝 모델이 큰 글자(제목)에선 퇴화 → <b>이원화</b>(라벨=파인튜닝/제목=범용)로 광각 52%.<br>
+<b>교훈:</b> 실물 데이터 없이 합성만으로도 5배 — 실전 페어 데이터로 2차 파인튜닝하면 추가 상승 여지.</div>
+
+<div class="phase"><span class="tag done">Phase 3</span><h3>구조 신호 — 숫자 앵커와 로직 정밀화 (7/8) — "권수를 틀리지 않을 수 있는가"</h3>
+<b>한 것 (팀 아이디어):</b> 색깔 라벨 위 큰 숫자('8') = 책 1권이라는 물리 앵커 도입 —
+붙은 얇은 책 분할, 글자 미판독 책 자리 확보, 권수의 물리적 근거.
++ 한글 서가 배열 규칙 구현(자모 분해 정렬, 커터 번호 소수 비교), 중복 배정 제거, 잘린 라벨줄 복구.<br>
+<b>성적:</b> 근접 <b>권수 74/74 = 100%</b>, 매칭 94%, 광각 1장 63권(라벨줄 3개), <b>실물 오배열 3건</b> 검출
+(권차 역순 포함 — 광각 3m 거리에서도 동일 검출), 장서 DB 이상 6건(목록 부재 4 + 중복 등록 2쌍).<br>
+<b>일반화 준비:</b> 라벨 색 자동 감지(5색 후보) + 분류번호의 카탈로그 기반 판정 → 600/700번대 사진이 오면 즉시 검증 가능.</div>
+
+<h3>성능 여정 한눈에</h3>
+<table>
+<tr><th>시점</th><th>광각(원거리) 인식</th><th>근접 인식</th><th>권수 파악</th><th>비고</th></tr>
+<tr><td>7/7 아침</td><td>8%</td><td>—</td><td>—</td><td>크롭별 OCR</td></tr>
+<tr><td>7/7 낮</td><td>19%</td><td>—</td><td>—</td><td>스트립 문맥 OCR</td></tr>
+<tr><td>7/7 밤</td><td>34%</td><td>—</td><td>—</td><td>제목 이중 인식</td></tr>
+<tr><td>7/8 새벽</td><td>30% (청구기호만)</td><td>96%</td><td>±1 오차</td><td>파인튜닝 적용</td></tr>
+<tr><td>7/8 낮</td><td>52% · 고유 63권</td><td>94%</td><td>100%</td><td>이원화+숫자 앵커+라벨줄 복구</td></tr>
+<tr><td><b>7/8 저녁</b></td><td class="big">7장 합산 102권 (~73%)</td><td class="big">94%</td><td class="big">100%</td><td>멀티프레임 투표 + ONNX 관문 통과</td></tr>
+</table>
+
+<!-- ══════════════ PART 3 ══════════════ -->
+<h2>Part 3. 앞으로의 계획 — 대림도서관 전체를 인식하는 LibAR까지</h2>
+
+<div class="timeline">
+
+<div class="tl-item done"><span class="tl-when">✅ 완료 (7/8)</span>
+<h3>M1. 측정 완결 + 온디바이스 관문 통과</h3>
+<b>결과:</b> ① 광각 7장 멀티프레임 합산 → <b>고유 102권(~73%)</b>, 2프레임 이상 안정 77권 —
+프레임마다 읽는 책이 달라 단일 63권에서 +39권. 실물 오배열 3건이 <b>투표 최다득표</b>로 검출(1표짜리 오독은 투표로 자동 필터),
+대출중인데 서가에 있는 책 2권 발견.
+② 파인튜닝 인식기 ONNX 변환·검증 통과 — 청구기호 토큰 <b>93% 완전일치, 크롭당 6ms(CPU)</b>
+→ 라벨 140개 배치 인식도 1초 미만, 폰 단독 구동의 기술 리스크 해소.
+③ 2차 데이터 요청 발송 완료(도착 대기).<br>
+<b>의미:</b> "한 서가 기준 성능" 공식 수치 확보 + 멀티프레임(=동영상 스캔, M4)의 효과를 수치로 선검증.</div>
+
+<div class="tl-item now"><span class="tl-when">다음 · 2차 데이터 도착 후 (~1주)</span>
+<h3>M2. 일반화 검증 — "800번대만 되는 것 아니냐"에 대한 답</h3>
+<b>방법:</b> 600/700번대(다른 색 라벨) 근접 사진에 현 파이프라인 적용. 색 자동 감지·카탈로그 기반 분류 판정은
+이미 구현됨 → 깨지는 지점만 수리. 해당 구간 장서 목록으로 채점.<br>
+<b>기대효과:</b> "대림 전체 적용 가능" 주장의 실증 근거. 공모전 심사 기준(활용성·확산 용이성)의 핵심 방어 논리.</div>
+
+<div class="tl-item"><span class="tl-when">~2주</span>
+<h3>M3. 학습의 세대 교체 — 휴리스틱을 신경망으로</h3>
+<b>방법:</b>
+① <b>YOLO26n 라벨 검출기</b>: 지금까지 파이프라인이 검증한 라벨 박스(자동 라벨링)로 학습.
+색·기울기·조명 휴리스틱이 하던 일을 학습된 검출기가 대체 — 맞닿은 스티커, 기운 각도, 색 변화에 강건.
+NMS-free 구조라 밀집 책등에 유리하고 온디바이스 최적화 모델.
+② <b>OCR 2차 파인튜닝</b>: 같은 단의 근접(정답)+광각(저해상 견본) 페어로 실전 학습쌍 자동 수확 →
+합성 데이터의 한계(실제 광학 열화)를 보완. <b>찍을수록 학습쌍이 쌓이는 자가 개선 루프.</b><br>
+<b>기대효과:</b> 광각 각도 사진(현재 검출 붕괴) 커버, 광각 인식률 52% → 65%+ 목표. 검출 속도 수십 배(온디바이스 요건).</div>
+
+<div class="tl-item"><span class="tl-when">~3주</span>
+<h3>M4. 동영상 걷기 스캔 — 운영 시나리오의 완성</h3>
+<b>방법:</b> 서가 앞을 지나가는 30초 동영상에서 프레임 추출 → 프레임 간 투표(멀티프레임은 이미 검증됨)
++ 트래킹으로 같은 책 중복 집계 방지. 걷기 = 모든 단을 근접 거리에서 통과하므로 <b>정밀 모드가 기본이 되는 촬영 방식.</b><br>
+<b>기대효과:</b> "서가 한 줄 = 30초 산책"이라는 사용자 경험 실증. 근접 94% 성능을 전 단에 적용하는 현실적 경로.</div>
+
+<div class="tl-item"><span class="tl-when">~4주+</span>
+<h3>M5. 온디바이스 PWA — 폰에서 실시간으로</h3>
+<b>방법 (PRD 확정 아키텍처):</b> YOLO26n ONNX + 파인튜닝 인식기 ONNX를 브라우저(onnxruntime-web, WebGPU)에서 구동.
+"검출 1회 + 크롭 배치 인식" 구조(실측 근거: 크롭마다 전체 파이프라인 재실행 시 56분 → 구조 교체로 초 단위).
+카메라 스트림에 AR 오버레이(초록=찾는 책/빨강=오배열), 매칭·순서 판정 로직은 JS 포팅(순수 로직이라 이식 용이).<br>
+<b>기대효과:</b> 서버 0원, 설치 0회(PWA), 기존 라벨 그대로(태그 부착 불필요) — RFID 로봇(관당 수천만 원) 대비
+<b>추가 하드웨어 0원</b>으로 오배열 점검. 경쟁 사례(교세라 SHELF EYE) 대비 실시간 AR + 이용자 모드 차별화.</div>
+
+<div class="tl-item"><span class="tl-when">공모전 제출</span>
+<h3>M6. 데이터 매쉬업 — 인식을 "도서관 데이터 활용"으로 완성</h3>
+<b>방법:</b> 스캔 로그(오배열·미배가 이력) × 정보나루 대출 빅데이터 결합 —
+"대출 회전율 높은 구간일수록 오배열 빈발" 같은 상관 분석 → <b>점검 우선순위 예측</b> 대시보드.
+이미 실증된 재료: 대출중인데 서가에 있는 책 검출(데이터-실물 불일치), 장서 DB 중복·누락 자동 발견.<br>
+<b>기대효과:</b> LibAR = 인식 도구를 넘어 <b>장서 운영 최적화 + 장서 DB 품질 검사기</b>.
+공모전 주제(도서관 데이터 활용)와의 직결점이자, 1,576개관 확산 시나리오의 근거.</div>
+
+</div>
+
+<h3>목표 성능 (대림 실증 기준)</h3>
+<table>
+<tr><th>지표</th><th>현재</th><th>목표</th><th>달성 수단</th></tr>
+<tr><td>권수 파악 (근접/걷기)</td><td>100% (4단 검증)</td><td>100% 유지 (전 구간)</td><td>숫자 앵커 + YOLO 검출</td></tr>
+<tr><td>인식률 (근접/걷기)</td><td>94%</td><td>96%+</td><td>2차 파인튜닝 + 완전한 장서 목록</td></tr>
+<tr><td>인식률 (광각 순회)</td><td>단일 63권 · 7장 합산 102권(~73%)</td><td>합산 80%+</td><td>YOLO + 실전 페어 파인튜닝 + 멀티프레임(검증됨)</td></tr>
+<tr><td>오배열 검출</td><td>실물 3건, 오탐 0 (투표 필터 검증)</td><td>오탐 0 유지</td><td>이중 신호 + 배열 규칙 + 멀티프레임 투표</td></tr>
+<tr><td>처리 속도</td><td>인식기 ONNX 크롭당 6ms(CPU) 실측</td><td>폰 프레임당 1초 미만</td><td>검출1+배치인식, ONNX INT8, NPU</td></tr>
+</table>
+
+<h3>위험 요소와 대비</h3>
+<table>
+<tr><th>위험</th><th>대비</th></tr>
+<tr><td>YOLO26n의 브라우저 배포 이슈</td><td>YOLO11n 폴백 (데이터·코드 호환, 교체 무비용 — PRD 확정)</td></tr>
+<tr><td>장서 목록 불완전 (이번에 6건 실증)</td><td>미매칭≠인식실패 분리 리포팅 + "목록 이상 후보" 역제안 기능화 (오히려 가치로 전환)</td></tr>
+<tr><td>다른 구간 라벨 서식 상이</td><td>색 자동 감지·카탈로그 기반 판정 구현 완료, M2에서 실측 검증</td></tr>
+<tr><td>실시간 성능 미달</td><td>"한 컷 스캔 모드"를 기본으로, 실시간은 증축 (PRD 확정 전략)</td></tr>
+</table>
+
+<footer>LibAR · 2026 도서관 데이터 활용 공모전 (국립중앙도서관) · 실증: 영등포구립 대림도서관<br>
+근거 문서: Library_AR_Book_Detection_PRD.md(§5.0.1 온디바이스 아키텍처) · 팀공유_근접vs광각_비교리포트_260708(v3) · 데일리리포트 260705~260708</footer>
+</body></html>

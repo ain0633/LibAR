@@ -1,5 +1,24 @@
 # LibAR 샘플 — 집 책 10권으로 돌려보는 오배열 탐지 데모
 
+> **[안내]** 이 문서는 초기 검증(집 책 데모) 단계 기준입니다. 아래에서 참조하는
+> `make_test_image.py` · `make_labels.py` · `compare_ocr.py`는 역할을 다해 제거되었습니다
+> (git 히스토리에 보존). 현재 실증 파이프라인 사용법은 바로 아래 섹션 참고.
+
+## 현재 실증 파이프라인 — `daelim_closeup.py`
+
+```
+python daelim_closeup.py <서가사진.jpg> [--rec_dir korean_lowres_rec_infer] [--no_title]
+```
+
+- `--rec_dir`: 라벨 전용 파인튜닝 rec 모델 폴더 (없으면 기존 모델만 사용). 제목 OCR은 항상 기존 모델(이원화).
+- `--no_title`: 제목 복구 생략 (라벨 직독만, 빠름)
+- **필요 파일** (용량 문제로 저장소 미포함, 팀 드라이브 공유): 서가 사진, `daelim_catalog.csv`(장서 목록), `korean_lowres_rec_infer/`(파인튜닝 모델)
+- **출력**: `out_ondevice/` 아래 AR 오버레이 이미지(`*_ar.jpg`), 결과 JSON, OCR 토큰 캐시(재실행 시 인식 생략하고 매칭 로직만 0초 재실험 가능)
+- **주의**: paddle이 한글 절대경로를 못 읽으므로 `libar-sample` 폴더 안에서 상대경로로 실행할 것
+
+광각 여러 컷 합산 측정과 ONNX 변환은 `daelim_multiframe_v3.ipynb`(Colab),
+파인튜닝 학습은 `gen_synth_labels.py` + `ocr_finetune_colab.ipynb`(Colab GPU) 참고.
+
 서가 사진 1장 + 책 목록(books.csv)만 넣으면 → **오배열(빨강)·찾는 책(초록)·판독불가(회색)** 를 표시한 이미지가 나옵니다.
 대림도서관 적용 시 books.csv를 장서데이터로 교체하면 그대로 동작합니다 ("데이터만 넣으면").
 
