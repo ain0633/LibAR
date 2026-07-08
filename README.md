@@ -6,6 +6,13 @@
 
 > **2026 도서관 데이터 활용 공모전** 출품작 (서비스 아이디어 제안 부문) · 실증 대상: 영등포구립 대림도서관
 
+## 진행 상황 (2026-07-08)
+
+- **근접 촬영**: 권수 파악 100% (숫자 앵커 분권), 목록 보유분 매칭 94%
+- **광각(서가 3m) 단일 프레임**: 63/140권 (기존 범용 OCR 6% → 파인튜닝+이원화+로직 개선)
+- **광각 멀티프레임 7장 합산**: 고유 102권 (~73%) — 실제 오배열 3건을 투표 최다득표로 검출, 대출중인데 서가에 있는 책 2권 발견
+- **온디바이스 관문**: 파인튜닝 rec ONNX 변환 완료 — 청구기호 토큰 93% 일치, 크롭당 6ms(CPU)
+
 ---
 
 ## 파이프라인 (한 컷 스캔 모드)
@@ -27,16 +34,21 @@
 | :--- | :--- |
 | `Library_AR_Book_Detection_PRD.md` | 제품 요구사항 정의서 (설계·일정·데이터·심사 대응) |
 | `LibAR_기술해설서_공유용.md` | 비개발자(사서 팀원)용 기술 해설서 |
+| `LibAR_개발여정_및_계획안_260708.html` | 개발 여정 + 로드맵 계획안 (개념 해설 포함) |
+| `팀공유_근접vs광각_비교리포트_260708.html` | 대림도서관 실증: 근접 vs 광각 인식 비교 리포트 |
 | `libar-sample/` | 동작하는 샘플 파이프라인 (아래) |
 
 ### `libar-sample/`
 | 파일 | 역할 |
 | :--- | :--- |
-| `pipeline.py` | 메인 파이프라인 (탐지→OCR→판정→오버레이) |
-| `books.csv` | 정답 기준표 (= 도서관 장서데이터 자리) |
-| `make_test_image.py` | 가상 서가 생성 (실물 없이 검증, `--damage`로 라벨 훼손 시뮬) |
-| `make_labels.py` | 청구기호 라벨 인쇄 시트 생성 |
-| `compare_ocr.py` | EasyOCR vs 한국어 PP-OCRv5 판독률 비교 |
+| `daelim_closeup.py` | **실증 메인 파이프라인** — 라벨줄 자동탐지 → 숫자 앵커 분권 → 이원화 OCR → 대조·오배열 판정 → AR 오버레이 |
+| `libar_ondevice.py` | 매칭·LIS 오배열 판정 공용 모듈 |
+| `gen_synth_labels.py` | 저해상 라벨 합성 데이터 생성 (rec 파인튜닝 학습셋) |
+| `ocr_finetune_colab.ipynb` | 한국어 rec 파인튜닝 노트북 (Colab GPU) |
+| `daelim_multiframe_v3.ipynb` | 광각 멀티프레임 합산 측정 + ONNX 변환 노트북 (Colab) |
+| `onnx_validate.py` | ONNX 변환 모델 vs paddle 원본 인식 일치 검증 |
+| `pipeline.py` | 초기 샘플 파이프라인 (가상 서가 검증용) |
+| `books.csv` | 정답 기준표 샘플 (= 도서관 장서데이터 자리) |
 | `train_spine_colab.ipynb` | 책등 탐지 모델(YOLO26) 학습 노트북 (Colab) |
 
 ## 빠른 시작
@@ -46,9 +58,8 @@ cd libar-sample
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 
-python make_test_image.py            # 가상 서가 생성 (오배열 2권 심음)
-python pipeline.py test_shelf.jpg    # 사서 모드: 오배열 탐지
-python pipeline.py test_shelf.jpg --search "863-생72ㅇ"   # 이용자 모드: 도서 검색
+# 사진·장서 CSV·파인튜닝 모델은 용량 문제로 저장소 미포함 (팀 드라이브 공유)
+python daelim_closeup.py <서가사진.jpg> --rec_dir korean_lowres_rec_infer
 ```
 
 자세한 사용법은 [`libar-sample/README.md`](libar-sample/README.md) 참고.

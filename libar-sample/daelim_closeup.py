@@ -9,7 +9,6 @@ os.environ["FLAGS_use_mkldnn"] = "0"
 import cv2, numpy as np
 from pathlib import Path
 from PIL import Image, ImageOps, ImageDraw, ImageFont
-from daelim_detect import detect_labels
 if hasattr(sys.stdout, "reconfigure"): sys.stdout.reconfigure(encoding="utf-8")
 HERE = Path(__file__).parent
 
@@ -48,8 +47,12 @@ def match(txt):
     """분류번호 바로 뒤에 붙은 저자기호만 신뢰(앞 단어와 붙은 가짜 토큰 배제).
        변형 정확일치 → 동일 분류 내 퍼지(0.75, 2위와 근접하면 기권해 제목 패스로)."""
     t = nn(txt)
-    m = re.search(r"(8[234]\d(?:\.\d+)?)([가-힣][0-9]{1,3}[가-힣ㄱ-ㅎ0Oo]?)", t)  # 말미 ㅇ이 0으로 읽히는 경우 포함
-    if m and m.group(1) in by_cls:
+    # 분류번호는 정규식이 아니라 카탈로그 등재 여부로 판정 → 어떤 분류 대역이든 자동 대응
+    # (오독 숫자 조각이 앞에 있을 수 있으므로 카탈로그에 있는 분류가 나올 때까지 전체 순회)
+    m = None
+    for m2 in re.finditer(r"(\d{3}(?:\.\d+)?)([가-힣][0-9]{1,3}[가-힣ㄱ-ㅎ0Oo]?)", t):  # 말미 ㅇ이 0으로 읽히는 경우 포함
+        if m2.group(1) in by_cls: m = m2; break
+    if m:
         clsv, author = m.group(1), m.group(2)
         cands = by_cls[clsv]
     else:
@@ -97,22 +100,76 @@ def match_title(text, thr=0.62):
             if s > bs: best, bs = c, s
     return (best, bs) if bs >= thr else (None, bs)
 
-# ── 밴드 탐지 (축소 스케일 자동 선택) ──
+# ── 밴드 탐지 (라벨 색·축소 스케일 자동 선택) ──
+# 색깔 라벨은 분류 대역마다 다름(800번대=파랑, 700번대 등은 타색) → 색상 후보별로 밴드 구조를
+# 찾아보고 숫자 앵커가 가장 많이 검증되는 색을 채택
 im = ImageOps.exif_transpose(Image.open(SRC).convert("RGB"))
 bgr = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
 H, W = bgr.shape[:2]
-best = (None, [], 0)
-for s in (1.0, 0.45, 0.35, 0.25):                  # 1.0=광각, 0.25~0.45=근접
-    small = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else bgr
-    labels_s, bands_s = detect_labels(small)
-    if len(labels_s) > best[2]: best = (s, bands_s, len(labels_s))
-SCALE, bands_s, _ = best
-bands = [(int(a/SCALE), int(b/SCALE)) for a, b in bands_s]
-bands = [b for b in bands if b[0] >= (b[1]-b[0])]  # 상단 절단 밴드 제거 (스티커 영역이 프레임 밖)
-if bands:                                          # 책등 파란무늬 오인 밴드 제거 (진짜 라벨줄 대비 얇음)
-    hmax = max(b-a for a, b in bands)
-    bands = [b for b in bands if b[1]-b[0] >= hmax*0.35]
-print(f"[밴드] scale={SCALE} → 라벨줄 {len(bands)}개 {bands}")
+HUES = {"파랑": (90, 135), "초록": (35, 85), "노랑": (18, 35),
+        "보라": (135, 168), "빨강": [(0, 12), (168, 180)]}
+
+def hue_mask(hsv, hue):
+    rng = HUES[hue]
+    if isinstance(rng, list):
+        hm = np.zeros(hsv.shape[:2], bool)
+        for h0, h1 in rng: hm |= (hsv[:, :, 0] >= h0) & (hsv[:, :, 0] <= h1)
+    else:
+        hm = (hsv[:, :, 0] >= rng[0]) & (hsv[:, :, 0] <= rng[1])
+    return hm & (hsv[:, :, 1] > 50) & (hsv[:, :, 2] > 60)
+
+def find_bands(small, hue):
+    """행 프로파일로 라벨줄 후보 검출 (축소 스케일 좌표)."""
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    rowfrac = hue_mask(hsv, hue).mean(axis=1)
+    thr = max(0.04, float(np.percentile(rowfrac, 90)) * 0.5)
+    on = rowfrac > thr
+    bands_, st = [], None
+    for i, g in enumerate(list(on) + [False]):
+        if g and st is None: st = i
+        elif not g and st is not None:
+            if bands_ and st - bands_[-1][1] < 12: bands_[-1] = (bands_[-1][0], i)
+            elif 10 <= i - st <= 90: bands_.append((st, i))
+            st = None
+    return [b for b in bands_ if 10 <= b[1]-b[0] <= 110]
+
+def digit_blobs(by0, by1, hue):
+    """밴드 내 색 스티커 위 밝은 숫자(분류 첫자리) 블롭 x중심 목록 — 책 1권당 1개."""
+    bh = by1 - by0
+    if bh < 8: return []
+    hsvb = cv2.cvtColor(bgr[by0:by1], cv2.COLOR_BGR2HSV)
+    bmask = hue_mask(hsvb, hue).astype(np.uint8)
+    wmask = ((hsvb[:, :, 1] < 90) & (hsvb[:, :, 2] > 130)).astype(np.uint8)
+    band_d = cv2.dilate(bmask, np.ones((9, 9), np.uint8), iterations=2)
+    ncc, _, stats, cent = cv2.connectedComponentsWithStats((wmask & band_d), 8)
+    out = []
+    for i in range(1, ncc):
+        x, y, w, h, area = stats[i]
+        if 0.25*bh <= h <= 0.8*bh and 0.08*bh <= w <= 0.6*bh and area >= 0.02*bh*bh:
+            out.append(float(cent[i][0]))
+    out.sort()
+    # 획 조각 병합은 숫자 폭(~0.2bh) 수준만 — 얇은 책은 이웃 숫자 간격이 0.35bh까지 좁아짐
+    return [d for j, d in enumerate(out) if j == 0 or d-out[j-1] >= bh*0.25]
+
+def validate(bands_o, hue):
+    """밴드 검증 3중: ①숫자 앵커 3개↑ ②상단 절단 아님 ③유효 최대 높이의 30%↑."""
+    bd = {b: digit_blobs(*b, hue) for b in bands_o}
+    ok = [b for b in bands_o if len(bd[b]) >= 3 and b[0] >= (b[1]-b[0])]
+    if ok:
+        hmax = max(b-a for a, b in ok)
+        ok = [b for b in ok if b[1]-b[0] >= hmax*0.3]
+    return ok, bd
+
+best = (None, None, [], {}, -1)                    # (hue, scale, bands, digits, score)
+for hue in HUES:
+    for s in (1.0, 0.45, 0.35, 0.25):              # 1.0=광각, 0.25~0.45=근접
+        small = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else bgr
+        cand = [(int(a/s), int(b/s)) for a, b in find_bands(small, hue)]
+        ok, bd = validate(cand, hue)
+        score = sum(len(bd[b]) for b in ok)        # 검증된 숫자 앵커 총수 = 색·스케일 적합도
+        if score > best[4]: best = (hue, s, ok, bd, score)
+HUE_SEL, SCALE, bands, band_digits, _ = best
+print(f"[밴드] 라벨색={HUE_SEL} scale={SCALE} → 라벨줄 {len(bands)}개 {[(b, len(band_digits[b])) for b in bands]}")
 
 # ── OCR (이원화) ──
 # 라벨 스트립 = 저해상 특화 파인튜닝 rec (작은 청구기호 글자에 강함)
@@ -183,21 +240,7 @@ for bi, (by0, by1) in enumerate(bands):
         json.dump(tok_cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
     print(f"[줄{bi}] 스티커 토큰 {len(toks)}개")
     if not toks: continue
-    # ── 숫자 앵커: 파란 스티커 위 흰 '8' 블롭 = 책 1권 (권수의 물리적 근거) ──
-    hsvb = cv2.cvtColor(bgr[by0:by1], cv2.COLOR_BGR2HSV)
-    bmask = ((hsvb[:, :, 0] >= 90) & (hsvb[:, :, 0] <= 135) &
-             (hsvb[:, :, 1] > 50) & (hsvb[:, :, 2] > 60)).astype(np.uint8)
-    wmask = ((hsvb[:, :, 1] < 90) & (hsvb[:, :, 2] > 130)).astype(np.uint8)
-    blue_d = cv2.dilate(bmask, np.ones((9, 9), np.uint8), iterations=2)
-    ncc, _, stats, cent = cv2.connectedComponentsWithStats((wmask & blue_d), 8)
-    digits = []
-    for i in range(1, ncc):
-        x, y, w, h, area = stats[i]
-        if 0.25*bh <= h <= 0.8*bh and 0.08*bh <= w <= 0.6*bh and area >= 0.02*bh*bh:
-            digits.append(float(cent[i][0]))
-    digits.sort()
-    # 획 조각 병합은 숫자 폭(~0.2bh) 수준만 — 얇은 책은 이웃 숫자 간격이 0.35bh까지 좁아짐
-    digits = [d for j, d in enumerate(digits) if j == 0 or d-digits[j-1] >= bh*0.25]
+    digits = band_digits[(by0, by1)]               # 숫자 앵커 = 책 1권 (밴드 검증 시 계산됨)
     # ── 주 신호: 토큰 간격 클러스터링 + 분류번호 앵커 재분리 (검증된 방식) ──
     toks.sort(key=lambda t: t[1])
     GAP = max(16, bh*0.35)                         # 밴드 높이 비례 (광각~16px, 근접~77px)
@@ -207,7 +250,8 @@ for bi, (by0, by1) in enumerate(bands):
         else: clusters[-1].append(t)
     resplit = []
     for cl in clusters:
-        anchors = [t for t in cl if re.fullmatch(r"8[234]\d(\.\d+)?", nn(t[0]))]
+        # 분할 앵커는 카탈로그 검사 없이 3자리 숫자면 인정 — 오독된 분류번호도 '라벨 존재' 신호로 유효
+        anchors = [t for t in cl if re.fullmatch(r"\d{3}(\.\d+)?", nn(t[0]))]
         if len(anchors) >= 2 and max(a[1] for a in anchors) - min(a[1] for a in anchors) > GAP*0.8:
             parts = {a[1]: [] for a in anchors}
             for t in cl:
@@ -271,15 +315,25 @@ n_call = sum(1 for r in rows_out if r["call"])
 print(f"[청구기호 매칭] {n_call}/{len(rows_out)} · {time.time()-t0:.0f}s")
 
 # ── 제목 복구 (미매칭 클러스터) ──
-xcs = sorted((r["box"][0]+r["box"][2])/2 for r in rows_out)
-spac = float(np.median([b-a for a, b in zip(xcs, xcs[1:])])) if len(xcs) > 1 else W/15
+# 책 폭 추정은 '해당 줄'의 숫자 앵커 간격으로 (여러 줄의 클러스터가 x축에서 섞이면 전역 간격은 붕괴)
+bspac = {}
+for bi2, b in enumerate(bands):
+    dg = band_digits[b]
+    gaps = [y-x for x, y in zip(dg, dg[1:])]
+    if gaps: bspac[bi2] = float(np.median(gaps))
+    else:
+        xc2 = sorted((r["box"][0]+r["box"][2])/2 for r in rows_out if r["band"] == bi2)
+        g2 = [y-x for x, y in zip(xc2, xc2[1:])]
+        bspac[bi2] = float(np.median(g2)) if g2 else W/15
 for r in rows_out:
     if NO_TITLE or r["call"]: continue
     x0, y0s, x1, y1s = r["box"]
     xc = (x0+x1)/2
+    spac = bspac.get(r["band"], W/15)
     tx0, tx1 = int(xc - spac*0.45), int(xc + spac*0.45)   # 책 폭 기준(스티커 폭은 좁을 수 있음)
     by0 = bands[r["band"]][0]
-    ty0 = max(0, by0 - int(H*0.55)); ty1 = y0s + 20
+    prev_end = max([b[1] for b in bands if b[1] <= by0-10], default=0)   # 윗줄 밴드 하단
+    ty0 = max(0, prev_end, by0 - int(H*0.55)); ty1 = y0s + 20
     tc = bgr[ty0:ty1, max(0, tx0):min(W, tx1)]
     if not tc.size: continue
     # 책등 제목은 세로쓰기(회전 필요)와 가로쓰기 혼재 → 둘 다 읽고 높은 점수 채택
