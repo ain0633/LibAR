@@ -44,9 +44,10 @@ footer{margin-top:2.5em;font-size:.85em;color:#777;border-top:1px solid #ddd;pad
 <div class="kpi">
 <div><div class="n">100%</div><div class="l">근접 권수 파악 (74/74)</div></div>
 <div><div class="n">94%</div><div class="l">근접 인식률 (목록 보유분)</div></div>
-<div><div class="n">6%→52%</div><div class="l">광각 인식률 (동일 사진)</div></div>
+<div><div class="n">63→102권</div><div class="l">광각 인식 (단일→7장 합산, ~73%)</div></div>
 <div><div class="n">3건</div><div class="l">실물 오배열 자동 검출</div></div>
 <div><div class="n">6건</div><div class="l">장서 DB 이상 발견</div></div>
+<div><div class="n">93% · 6ms</div><div class="l">ONNX 변환 일치율 · 크롭당 속도(CPU)</div></div>
 </div>
 
 <!-- ══════════════ PART 1 ══════════════ -->
@@ -114,7 +115,8 @@ footer{margin-top:2.5em;font-size:.85em;color:#777;border-top:1px solid #ddd;pad
 <tr><td>7/7 낮</td><td>19%</td><td>—</td><td>—</td><td>스트립 문맥 OCR</td></tr>
 <tr><td>7/7 밤</td><td>34%</td><td>—</td><td>—</td><td>제목 이중 인식</td></tr>
 <tr><td>7/8 새벽</td><td>30% (청구기호만)</td><td>96%</td><td>±1 오차</td><td>파인튜닝 적용</td></tr>
-<tr><td><b>7/8 현재</b></td><td class="big">52% · 고유 63권</td><td class="big">94%</td><td class="big">100%</td><td>이원화+숫자 앵커+라벨줄 복구</td></tr>
+<tr><td>7/8 낮</td><td>52% · 고유 63권</td><td>94%</td><td>100%</td><td>이원화+숫자 앵커+라벨줄 복구</td></tr>
+<tr><td><b>7/8 저녁</b></td><td class="big">7장 합산 102권 (~73%)</td><td class="big">94%</td><td class="big">100%</td><td>멀티프레임 투표 + ONNX 관문 통과</td></tr>
 </table>
 
 <!-- ══════════════ PART 3 ══════════════ -->
@@ -122,14 +124,17 @@ footer{margin-top:2.5em;font-size:.85em;color:#777;border-top:1px solid #ddd;pad
 
 <div class="timeline">
 
-<div class="tl-item now"><span class="tl-when">지금 진행 중 (7/8~)</span>
+<div class="tl-item done"><span class="tl-when">✅ 완료 (7/8)</span>
 <h3>M1. 측정 완결 + 온디바이스 관문 통과</h3>
-<b>방법:</b> ① 광각 7장 멀티프레임 GPU 재실행(현 세팅) → 최종 커버리지 확정
-② 파인튜닝 인식기 ONNX 변환 → onnxruntime 구동 검증 (폰에서 돌 수 있는 형식인지 확인하는 관문)
-③ 2차 데이터 요청 발송(다른 색 구간 검증용 + 근접·광각 페어 + 걷기 동영상)<br>
-<b>기대효과:</b> "한 서가 기준 성능"의 공식 수치 확보. ONNX가 통과되면 서버 없는 폰 단독 구동의 기술 리스크 해소.</div>
+<b>결과:</b> ① 광각 7장 멀티프레임 합산 → <b>고유 102권(~73%)</b>, 2프레임 이상 안정 77권 —
+프레임마다 읽는 책이 달라 단일 63권에서 +39권. 실물 오배열 3건이 <b>투표 최다득표</b>로 검출(1표짜리 오독은 투표로 자동 필터),
+대출중인데 서가에 있는 책 2권 발견.
+② 파인튜닝 인식기 ONNX 변환·검증 통과 — 청구기호 토큰 <b>93% 완전일치, 크롭당 6ms(CPU)</b>
+→ 라벨 140개 배치 인식도 1초 미만, 폰 단독 구동의 기술 리스크 해소.
+③ 2차 데이터 요청 발송 완료(도착 대기).<br>
+<b>의미:</b> "한 서가 기준 성능" 공식 수치 확보 + 멀티프레임(=동영상 스캔, M4)의 효과를 수치로 선검증.</div>
 
-<div class="tl-item"><span class="tl-when">2차 데이터 도착 후 (~1주)</span>
+<div class="tl-item now"><span class="tl-when">다음 · 2차 데이터 도착 후 (~1주)</span>
 <h3>M2. 일반화 검증 — "800번대만 되는 것 아니냐"에 대한 답</h3>
 <b>방법:</b> 600/700번대(다른 색 라벨) 근접 사진에 현 파이프라인 적용. 색 자동 감지·카탈로그 기반 분류 판정은
 이미 구현됨 → 깨지는 지점만 수리. 해당 구간 장서 목록으로 채점.<br>
@@ -174,9 +179,9 @@ NMS-free 구조라 밀집 책등에 유리하고 온디바이스 최적화 모�
 <tr><th>지표</th><th>현재</th><th>목표</th><th>달성 수단</th></tr>
 <tr><td>권수 파악 (근접/걷기)</td><td>100% (4단 검증)</td><td>100% 유지 (전 구간)</td><td>숫자 앵커 + YOLO 검출</td></tr>
 <tr><td>인식률 (근접/걷기)</td><td>94%</td><td>96%+</td><td>2차 파인튜닝 + 완전한 장서 목록</td></tr>
-<tr><td>인식률 (광각 순회)</td><td>52% (고유 63권/장)</td><td>65%+</td><td>YOLO + 실전 페어 파인튜닝 + 멀티프레임</td></tr>
-<tr><td>오배열 검출</td><td>실물 3건, 오탐 0</td><td>오탐 0 유지</td><td>이중 신호 + 배열 규칙 (검증됨)</td></tr>
-<tr><td>처리 속도</td><td>PC 검증용 (분 단위)</td><td>폰 프레임당 1초 미만</td><td>검출1+배치인식, ONNX INT8, NPU</td></tr>
+<tr><td>인식률 (광각 순회)</td><td>단일 63권 · 7장 합산 102권(~73%)</td><td>합산 80%+</td><td>YOLO + 실전 페어 파인튜닝 + 멀티프레임(검증됨)</td></tr>
+<tr><td>오배열 검출</td><td>실물 3건, 오탐 0 (투표 필터 검증)</td><td>오탐 0 유지</td><td>이중 신호 + 배열 규칙 + 멀티프레임 투표</td></tr>
+<tr><td>처리 속도</td><td>인식기 ONNX 크롭당 6ms(CPU) 실측</td><td>폰 프레임당 1초 미만</td><td>검출1+배치인식, ONNX INT8, NPU</td></tr>
 </table>
 
 <h3>위험 요소와 대비</h3>
