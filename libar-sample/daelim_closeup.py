@@ -18,6 +18,9 @@ REC_DIR = None
 if "--rec_dir" in sys.argv:
     REC_DIR = sys.argv[sys.argv.index("--rec_dir")+1]
 NO_TITLE = "--no_title" in sys.argv               # 청구기호 경로만 (광각 A/B용)
+CATALOG = HERE/"daelim_catalog.csv"               # 구간별 장서 목록 (--catalog로 교체)
+if "--catalog" in sys.argv:
+    CATALOG = Path(sys.argv[sys.argv.index("--catalog")+1])
 
 def nn(s):  # ㄱ-ㅎ 자모 보존 필수: 저자기호 말미가 자모(라57ㅍ 등)
     return re.sub(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ.]", "", unicodedata.normalize("NFC", str(s)))
@@ -25,8 +28,9 @@ def ntitle(s): return re.sub(r"[^0-9A-Za-z가-힣]", "", unicodedata.normalize("
 
 # ── 카탈로그 ──
 cat = []
-for r in csv.DictReader(open(HERE/"daelim_catalog.csv", encoding="utf-8-sig")):
+for r in csv.DictReader(open(CATALOG, encoding="utf-8-sig")):
     call = r["call_number"].strip()
+    call = re.sub(r"\s*(?:=|[cC]\.)\d+$", "", call)  # 복본 표기(=2, c.2)는 동일 청구기호 — 중복 슬롯으로 처리
     parts = call.split("-")
     if len(parts) < 2: continue
     cls, author = parts[0].strip(), parts[1].strip()
@@ -107,10 +111,12 @@ im = ImageOps.exif_transpose(Image.open(SRC).convert("RGB"))
 bgr = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
 H, W = bgr.shape[:2]
 HUES = {"파랑": (90, 135), "초록": (35, 85), "노랑": (18, 35),
-        "보라": (135, 168), "빨강": [(0, 12), (168, 180)]}
+        "보라": (135, 168), "빨강": [(0, 12), (168, 180)], "검정": None}
 
 def hue_mask(hsv, hue):
     rng = HUES[hue]
+    if rng is None:  # 검정 라벨(700번대 등): 극저밝기 픽셀은 S가 노이즈라 V만으로 판정
+        return hsv[:, :, 2] < 60
     if isinstance(rng, list):
         hm = np.zeros(hsv.shape[:2], bool)
         for h0, h1 in rng: hm |= (hsv[:, :, 0] >= h0) & (hsv[:, :, 0] <= h1)
@@ -139,8 +145,12 @@ def digit_blobs(by0, by1, hue):
     if bh < 8: return []
     hsvb = cv2.cvtColor(bgr[by0:by1], cv2.COLOR_BGR2HSV)
     bmask = hue_mask(hsvb, hue).astype(np.uint8)
-    wmask = ((hsvb[:, :, 1] < 90) & (hsvb[:, :, 2] > 130)).astype(np.uint8)
     band_d = cv2.dilate(bmask, np.ones((9, 9), np.uint8), iterations=2)
+    # 검정 스티커는 구석 흰 숫자가 어둡게 찍혀 130이면 놓침 → 110 고정.
+    # (실험 기각) Otsu 적응 임계: 앵커 +3개가 넓은 책 클러스터를 조각내 매칭 하락(700_05·09 실측 -8)
+    #  — 앵커는 재현율보다 정밀도가 중요 (역할이 분할·유령자리·검산이므로)
+    vthr = 110 if HUES[hue] is None else 130
+    wmask = ((hsvb[:, :, 1] < 90) & (hsvb[:, :, 2] > vthr)).astype(np.uint8)
     ncc, _, stats, cent = cv2.connectedComponentsWithStats((wmask & band_d), 8)
     out = []
     for i in range(1, ncc):
@@ -169,6 +179,7 @@ for hue in HUES:
         score = sum(len(bd[b]) for b in ok)        # 검증된 숫자 앵커 총수 = 색·스케일 적합도
         if score > best[4]: best = (hue, s, ok, bd, score)
 HUE_SEL, SCALE, bands, band_digits, _ = best
+# (실험 기각) 검정 밴드 하단 그림자 트리밍: bh 축소 → 클러스터 GAP 축소 → 과분할로 매칭 하락 (700_05·09 실측 -8)
 print(f"[밴드] 라벨색={HUE_SEL} scale={SCALE} → 라벨줄 {len(bands)}개 {[(b, len(band_digits[b])) for b in bands]}")
 
 # ── OCR (이원화) ──
@@ -221,7 +232,9 @@ def ocr_tokens(img, ocr, chunk=1280, ov=120, maxh=1000):
     return [(t, x/f, y/f) for t, x, y in out]
 
 t0 = time.time()
-suffix = (SRC.stem.split("459")[-1] or "_00") + ("_ft" if REC_DIR else "")
+_v = re.search(r"v(\d+)", str(REC_DIR)) if REC_DIR else None
+_ft = "" if not REC_DIR else "_ft" + (_v.group(1) if _v else "")  # 모델 세대별 캐시 분리 (A/B 오염 방지)
+suffix = (SRC.stem.split("459")[-1] or "_00") + _ft
 out = HERE/"out_ondevice"; out.mkdir(exist_ok=True)
 CACHE = out/f"closeup{suffix}_tokens.json"
 tok_cache = json.load(open(CACHE, encoding="utf-8")) if CACHE.exists() else {}
@@ -230,6 +243,11 @@ for bi, (by0, by1) in enumerate(bands):
     bh = by1 - by0
     sy0 = max(0, by0 - int(bh*3.5))               # 흰 스티커는 밴드 위 ~2-3배 높이
     key = f"{sy0}_{by1}"
+    if key not in tok_cache:  # 밴드 트리밍 등으로 좌표가 약간 달라져도 기존 OCR 캐시 재사용
+        for k in tok_cache:
+            ks, ke = map(int, k.split("_"))
+            if abs(ke - by1) <= 80 and ks <= sy0 + 40:
+                key = k; break
     if key in tok_cache:
         toks = [tuple(t) for t in tok_cache[key]]
     else:
