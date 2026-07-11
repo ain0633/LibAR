@@ -19,11 +19,19 @@ random.seed(42)
 def stem_800_close(s):   # closeup_00 → KakaoTalk_20260707_184409459(.jpg), _01 → ..._01
     return "KakaoTalk_20260707_184409459" + ("" if s == "_00" else s)
 
+def photo_3rd(s):
+    """3차 세트 사진은 1번~5번 폴더에 분산 — 스템으로 탐색."""
+    for d in range(1, 6):
+        if (HERE.parent/f"대림데이터/3차데이터/{d}번/{s}.jpg").exists(): return f"{d}번/{s}"
+    return s
+
 SOURCES = [
     (HERE/"m2_results/out_ondevice", HERE.parent/"대림데이터/600번대", lambda s: s),
     (HERE/"m2_results/out_ondevice", HERE.parent/"대림데이터/700번대", lambda s: s),
     (HERE/"daelim_v3_results/out_ondevice", HERE.parent/"대림데이터", lambda s: s),
     (HERE/"out_ondevice", HERE.parent/"대림데이터", stem_800_close),
+    (HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터/vid_frames_all", lambda s: s),
+    (HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터", photo_3rd),
 ]
 
 OUT = HERE/"real_rec_data"; (OUT/"crops").mkdir(parents=True, exist_ok=True)
