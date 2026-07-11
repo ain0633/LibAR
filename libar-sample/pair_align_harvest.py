@@ -19,12 +19,20 @@ def imread(p): return cv2.imdecode(np.fromfile(str(p), dtype=np.uint8), 1)
 def stem_800_close(s):
     return "KakaoTalk_20260707_184409459" + ("" if s == "_00" else s)
 
+def photo_3rd(s):
+    """3차 세트 사진은 1번~5번 폴더에 분산 — 스템으로 탐색."""
+    for d in range(1, 6):
+        if (HERE.parent/f"대림데이터/3차데이터/{d}번/{s}.jpg").exists(): return f"{d}번/{s}"
+    return s
+
 # (섹션, result 폴더, 사진 폴더, 파일명 복원)
 CFG = [
     ("600", HERE/"out_ondevice", HERE.parent/"대림데이터/600번대", lambda s: s),
     ("700", HERE/"out_ondevice", HERE.parent/"대림데이터/700번대", lambda s: s),
     ("800w", HERE/"daelim_v3_results/out_ondevice", HERE.parent/"대림데이터", lambda s: s),
     ("800c", HERE/"out_ondevice", HERE.parent/"대림데이터", stem_800_close),
+    ("900v", HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터/vid_frames_all", lambda s: s),
+    ("900s", HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터", photo_3rd),
 ]
 
 def load_frames():
@@ -41,7 +49,7 @@ def load_frames():
             for r in rows: bands.setdefault(r["band"], []).append(r)
             for b in bands.values(): b.sort(key=lambda r: r["box"][0])
             m = sum(1 for r in rows if r["call"])
-            frames[key] = dict(sec=sec[:3], photo=photo, bands=bands,
+            frames[key] = dict(sec=sec[:3], photo=photo, bands=bands, rd=rd,
                                rate=m/max(1, len(rows)), n=len(rows))
     return frames
 
@@ -111,7 +119,7 @@ def band_line_gap(gf, gb):
 def _slot_cache(gk, gf):
     if "_cache" not in gf:
         stem = gk.split(":", 1)[1]
-        cp = HERE/"out_ondevice"/f"closeup{stem}_ft_tokens.json"
+        cp = gf["rd"]/f"closeup{stem}_ft_tokens.json"
         gf["_cache"] = json.load(open(cp, encoding="utf-8")) if cp.exists() else {}
     return gf["_cache"]
 
@@ -128,14 +136,16 @@ def _slot_rows(gf, rg):
     if not toks: return []
     bh = (by1 - sy0) / 4.5
     by0_est = by1 - bh
-    inside = [y for _, x, y in toks if x0 + 10 <= x <= x1 - 10 and y < by0_est - 5]
+    inside = sorted((y, t) for t, x, y in toks if x0 + 10 <= x <= x1 - 10 and y < by0_est - 5)
     if not inside: return []
-    ys = sorted(inside)
-    rows = [[ys[0]]]
-    for y in ys[1:]:
-        if y - rows[-1][-1] <= 18: rows[-1].append(y)
-        else: rows.append([y])
-    return [sum(r)/len(r) for r in rows][-2:]
+    rows = [[inside[0]]]
+    for y, t in inside[1:]:
+        if y - rows[-1][-1][0] <= 18: rows[-1].append((y, t))
+        else: rows.append([(y, t)])
+    # 복본/권차 스티커 줄(c.2, =2, v.1)은 라벨 본문이 아님 — 텍스트로 판별해 제외
+    _copy = re.compile(r"^\s*[cCvV]?[.=]?\s*\d{1,2}\s*$|^[cCvV]\.?\d")
+    rows = [r for r in rows if not all(_copy.match(t or "") for _, t in r)]
+    return [sum(y for y, _ in r)/len(r) for r in rows][-2:]
 
 def token_rows(gk, gf, rg, gb):
     """슬롯의 라벨 줄 위치·정체 복원 → [(y0, y1, 줄인덱스 0=분류 1=저자), ...]
@@ -168,7 +178,7 @@ targets = {k: f for k, f in frames.items() if f["rate"] < 0.5 and f["n"] >= 30} 
 print(f"[프레임] 정답 {len(truths)}개 · 문제 {len(targets)}개")
 
 OUT = HERE/"real_rec_data_v3"; (OUT/"crops").mkdir(parents=True, exist_ok=True)
-pairs_out = []; photo_cache = {}
+pairs_out = []; photo_cache = {}; seen_names = set()
 for tk, tf in truths.items():
     for tb, tseq in tf["bands"].items():
         tcalls = [r["call"] for r in tseq]
@@ -220,7 +230,9 @@ for tk, tf in truths.items():
                             if li.size == 0 or li.shape[0] < 10 or li.shape[1] < 32: continue
                             hsvl = cv2.cvtColor(li, cv2.COLOR_BGR2HSV)
                             if (hsvl[:, :, 2] < 60).mean() > 0.25: continue  # 검정 스티커가 섞인 크롭 → 기각
-                            name = f"pair_{gk.split(':')[1]}_{gb}_{rg['box'][0]}_{txt}.jpg"
+                            name = f"pair_{gk.split(':')[1]}_{gb}_{rg['box'][0]}_{txt}.jpg".replace("/", "_")
+                            if name in seen_names: continue   # 여러 답안지가 같은 슬롯을 가리키면 1회만
+                            seen_names.add(name)
                             cv2.imencode(".jpg", li, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tofile(str(OUT/"crops"/name))
                             pairs_out.append((f"crops/{name}", txt))
                             n_new += 1

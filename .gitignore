@@ -54,6 +54,8 @@ libar-sample/newton_*.csv
 libar-sample/*_log.txt
 libar-sample/daelim_v3_results/
 libar-sample/m2_results/
+libar-sample/video_results/
+libar-sample/video_v4_results/
 libar-sample/real_rec_data*/
 libar-sample/yolo_labelset/
 libar-sample/dataset_*/

@@ -17,11 +17,18 @@ random.seed(42)
 def stem_800_close(s):
     return "KakaoTalk_20260707_184409459" + ("" if s == "_00" else s)
 
+def photo_3rd(s):
+    for d in range(1, 6):
+        if (HERE.parent/f"대림데이터/3차데이터/{d}번/{s}.jpg").exists(): return f"{d}번/{s}"
+    return s
+
 SOURCES = [
     (HERE/"m2_results/out_ondevice", HERE.parent/"대림데이터/600번대", lambda s: s),
     (HERE/"m2_results/out_ondevice", HERE.parent/"대림데이터/700번대", lambda s: s),
     (HERE/"daelim_v3_results/out_ondevice", HERE.parent/"대림데이터", lambda s: s),
     (HERE/"out_ondevice", HERE.parent/"대림데이터", stem_800_close),
+    (HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터/vid_frames_all", lambda s: s),
+    (HERE/"video_results/out_ondevice", HERE.parent/"대림데이터/3차데이터", photo_3rd),
 ]
 # 검출 붕괴 프레임(자동 라벨 신뢰 불가) — AR 이미지 검수로 확인
 SKIP = {"KakaoTalk_20260708_164051931_02", "KakaoTalk_20260708_164051931_10",
