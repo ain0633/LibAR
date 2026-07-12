@@ -27,6 +27,8 @@ CONF = float(opt("--conf", 0.25))
 # ── 카탈로그 + 매칭 (daelim_closeup.py 검증본 복사) ──
 def nn(s):
     return re.sub(r"[^0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ.]", "", unicodedata.normalize("NFC", str(s)))
+def ntitle(s):
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", unicodedata.normalize("NFC", str(s))).lower()
 cat = []
 for r in csv.DictReader(open(CATALOG, encoding="utf-8-sig")):
     call = re.sub(r"\s*(?:=|[cC]\.)\d+$", "", r["call_number"].strip())
@@ -34,7 +36,8 @@ for r in csv.DictReader(open(CATALOG, encoding="utf-8-sig")):
     if len(parts) < 2: continue
     m = re.match(r"^[가-힣A-Z]*([\d.]+)$", parts[0].strip())
     cat.append({"call": call, "cls": m.group(1) if m else parts[0].strip(),
-                "author": nn(parts[1].strip()), "title": r["title"]})
+                "author": nn(parts[1].strip()), "title": r["title"],
+                "t": ntitle(r["title"].split(":")[0])})
 by_cls = {}
 for c in cat: by_cls.setdefault(c["cls"], []).append(c)
 
@@ -80,6 +83,20 @@ def match(txt):
     if len(scored) > 1 and scored[-1][0] - scored[-2][0] < 0.05: return None, scored[-1][0]
     return scored[-1][1], scored[-1][0]
 
+def match_title(text, thr=0.62):
+    full = ntitle(text)
+    han = re.sub(r"[a-z0-9]", "", full)
+    best, bs = None, 0.0
+    for t in {full, han}:
+        if len(t) < 3: continue
+        for c in cat:
+            if not c["t"]: continue
+            lm = difflib.SequenceMatcher(None, t, c["t"]).find_longest_match(0, len(t), 0, len(c["t"]))
+            p = lm.size/max(4, min(len(t), len(c["t"])))
+            s = 0.6*p + 0.4*difflib.SequenceMatcher(None, t, c["t"]).ratio()
+            if s > bs: best, bs = c, s
+    return (best, bs) if bs >= thr else (None, bs)
+
 # ── 1) YOLO 검출 (1회) ──
 import onnxruntime as ort
 im0 = ImageOps.exif_transpose(Image.open(SRC).convert("RGB"))
@@ -109,8 +126,19 @@ out_dir = HERE/"out_ondevice"; out_dir.mkdir(exist_ok=True)
 CACHE = out_dir/f"yolo_{suffix}_tokens.json"
 tok_cache = json.load(open(CACHE, encoding="utf-8")) if CACHE.exists() else {}
 
-def _ocr_once(img):
-    res = ocr.predict(img)
+_ocr_title = None
+def get_ocr_title():
+    """제목은 기존 rec (이원화 — 파인튜닝 rec은 큰 글자에서 퇴화)."""
+    global _ocr_title
+    if _ocr_title is None:
+        _ocr_title = PaddleOCR(lang="korean", enable_mkldnn=False, use_doc_orientation_classify=False,
+                               use_doc_unwarping=False, use_textline_orientation=False,
+                               text_detection_model_name="PP-OCRv5_server_det",
+                               text_recognition_model_name="korean_PP-OCRv5_mobile_rec")
+    return _ocr_title
+
+def _ocr_once(img, eng=None):
+    res = (eng or ocr).predict(img)
     out2 = []
     if res:
         rr = res[0]
@@ -119,7 +147,7 @@ def _ocr_once(img):
             out2.append((txt, float(p[:, 0].mean()), float(p[:, 1].mean())))
     return out2
 
-def ocr_tokens(img, chunk=1280, ov=120, maxh=1000):
+def ocr_tokens(img, eng=None, chunk=1280, ov=120, maxh=1000):
     """daelim_closeup.py 검증본: 저해상 업스케일 + 가로 청크 분할."""
     h, w = img.shape[:2]
     if h < 320: f = min(3.0, 960/h)
@@ -130,12 +158,12 @@ def ocr_tokens(img, chunk=1280, ov=120, maxh=1000):
         h, w = img.shape[:2]
     out2 = []
     if max(h, w) <= chunk + ov:
-        out2 = _ocr_once(img)
+        out2 = _ocr_once(img, eng)
     else:
         x = 0
         while x < w:
             piece = img[:, x:min(w, x+chunk+ov)]
-            for txt, xc, yc in _ocr_once(piece):
+            for txt, xc, yc in _ocr_once(piece, eng):
                 if x > 0 and xc < ov*0.5: continue
                 out2.append((txt, xc+x, yc))
             x += chunk
@@ -151,7 +179,7 @@ for b in bxs:
     rows_of_boxes[-1].append(b); last_y = yc
 
 t0 = time.time()
-rows_out = []
+rows_out = []; rows_bottom = {}
 for ri, rboxes in enumerate(rows_of_boxes):
     if len(rboxes) < 2:  # 한 박스짜리 줄은 잡음 가능성 — 그래도 처리
         pass
@@ -173,10 +201,10 @@ for ri, rboxes in enumerate(rows_of_boxes):
     sy0 = max(0, int(min(b[1] for b in rb)))
     sy1 = min(H, int(max(b[3] for b in rb)))
     key = f"r{ri}_{sy0}_{sy1}_{deg:.1f}"
+    rot = cv2.warpAffine(bgr, M, (W, H)) if abs(deg) > 1.5 else bgr
     if key in tok_cache:
         toks = [tuple(t) for t in tok_cache[key]]
     else:
-        rot = cv2.warpAffine(bgr, M, (W, H)) if abs(deg) > 1.5 else bgr
         strip = rot[sy0:sy1, :]
         toks = ocr_tokens(strip)
         toks = [(t, x2, y2+sy0) for t, x2, y2 in toks]      # 회전 좌표계 절대값
@@ -191,15 +219,47 @@ for ri, rboxes in enumerate(rows_of_boxes):
         bx = centers[j][1]
         if abs(centers[j][0] - t[1]) <= max(60, (bx[2]-bx[0]) * 0.9):
             assign[j].append(t)
+    this_row = []
     for j, (ob, b) in enumerate(zip(rboxes, rb)):
         inb = sorted(assign[j], key=lambda t: (round(t[2]/30), t[1]))
         txt = " ".join(t[0] for t in inb)
         row, sc = match(txt)
-        rows_out.append({"box": list(map(int, ob)), "band": ri, "read": txt,
+        this_row.append({"box": list(map(int, ob)), "rbox": b, "band": ri, "read": txt,
                          "call": row["call"] if row else None,
                          "title": row["title"][:20] if row else None,
                          "how": "청구기호" if row else None, "score": round(sc, 2)})
-print(f"[인식] 줄 {len(rows_of_boxes)}개 스트립 OCR · {time.time()-t0:.0f}s")
+    # ── 제목 복구 (daelim_closeup 검증본 이식): 미매칭 박스는 라벨 위 제목 기둥을 기존 rec으로 ──
+    n_rec = 0
+    prev_bottom = rows_bottom.get(ri-1, 0)
+    for z in this_row:
+        if z["call"]: continue
+        bx0, by0r, bx1, by1r = z["rbox"]
+        wid = bx1 - bx0
+        tx0, tx1 = int(bx0 - wid*0.15), int(bx1 + wid*0.15)
+        ty0 = max(0, int(prev_bottom), int(by0r - H*0.55)); ty1 = int(by0r + 20)
+        tkey = f"{key}_t_{int(bx0)}"
+        if tkey in tok_cache:
+            cand_txts = tok_cache[tkey]
+        else:
+            tc = rot[ty0:ty1, max(0, tx0):min(W, tx1)]
+            if not tc.size: continue
+            cand_txts = [" ".join(t[0] for t in ocr_tokens(r2, get_ocr_title()))
+                         for r2 in (cv2.rotate(tc, cv2.ROTATE_90_COUNTERCLOCKWISE), tc)]
+            tok_cache[tkey] = cand_txts
+        best_row, best_sc = None, 0.0
+        for txt2 in cand_txts:
+            trow, sc2 = match_title(txt2)
+            if sc2 > best_sc: best_row, best_sc = trow, sc2
+        if best_row:
+            z["call"] = best_row["call"]; z["title"] = best_row["title"][:20]
+            z["how"] = "제목복구"; z["score"] = round(best_sc, 2)
+            n_rec += 1
+    json.dump(tok_cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
+    if n_rec: print(f"[줄{ri}] 제목 복구 +{n_rec}권")
+    rows_bottom[ri] = max(b[3] for b in rb)
+    for z in this_row: z.pop("rbox", None)
+    rows_out += this_row
+print(f"[인식] 줄 {len(rows_of_boxes)}개 스트립 OCR + 제목복구 · {time.time()-t0:.0f}s")
 
 # 같은 책의 중복 박스(YOLO 이중 검출) 정리: 같은 call이 x 근접 박스에 2회 → 1회
 seen = {}
@@ -212,6 +272,21 @@ for rr in rows_out:
         if loser is seen[k]: seen[k] = rr
     else: seen[k] = rr
 
+# 중복 배정 제거 (카탈로그 등록 수 초과분 해제 — 주로 제목복구 오지정)
+from collections import Counter
+cat_n = Counter(c["call"] for c in cat)
+by_call = {}
+for z in rows_out:
+    if z["call"]: by_call.setdefault(z["call"], []).append(z)
+n_drop = 0
+for call2, rs in by_call.items():
+    allow = max(1, cat_n.get(call2, 1))
+    if len(rs) > allow:
+        rs.sort(key=lambda z: (z.get("how") == "청구기호", z.get("score", 0)), reverse=True)
+        for z in rs[allow:]:
+            z["call"] = None; z["how"] = None; z["title"] = None; n_drop += 1
+if n_drop: print(f"[중복 배정 해제] {n_drop}건")
+
 n_call = sum(1 for z in rows_out if z["call"])
 uniq = len({z["call"] for z in rows_out if z["call"]})
 print(f"[매칭] {n_call}/{len(rows_out)} 박스 · 고유 {uniq}권")
@@ -223,7 +298,9 @@ try: fs = ImageFont.truetype("C:/Windows/Fonts/malgunbd.ttf", 40)
 except Exception: fs = ImageFont.load_default()
 for z in rows_out:
     x0, y0, x1, y1 = z["box"]
-    c = (40, 190, 90) if z["call"] else (150, 150, 150)
+    if z["call"] is None: c = (150, 150, 150)
+    elif z["how"] == "제목복구": c = (50, 130, 240)
+    else: c = (40, 190, 90)
     d.rectangle([x0, y0, x1, y1], outline=c+(255,), width=6)
     if z["call"]:
         d.text((x0, max(0, y0-46)), z["call"].split("-")[-1], fill=(0, 90, 0, 255), font=fs,
