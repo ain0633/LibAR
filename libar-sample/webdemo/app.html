@@ -68,19 +68,20 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
     <h2 class="text-xs font-semibold tracking-widest text-on-surface-variant">최근 스캔</h2>
     <div class="bg-surface-container border border-outline-variant rounded-xl divide-y divide-outline-variant">
       <div class="p-4 flex justify-between items-center">
-        <div><div class="font-bold">862-912 구간</div><div class="text-xs text-on-surface-variant">오늘 · 걷기 스캔 3회</div></div>
-        <div class="text-right"><div class="text-primary font-bold">판독률 95%</div><div class="text-xs text-error">오배열 의심 2건</div></div>
+        <div><div class="font-bold">862-912 서가</div><div class="text-xs text-on-surface-variant">오늘 점검</div></div>
+        <div class="text-right"><div class="text-primary font-bold">83권 확인</div><div class="text-xs text-error">잘못 꽂힌 책 2권</div></div>
       </div>
       <div class="p-4 flex justify-between items-center">
-        <div><div class="font-bold">700번대</div><div class="text-xs text-on-surface-variant">어제 · 사진 스캔</div></div>
-        <div class="text-right"><div class="text-primary font-bold">26권 매칭</div><div class="text-xs text-on-surface-variant">17° 기울기 보정</div></div>
+        <div><div class="font-bold">700번대 서가</div><div class="text-xs text-on-surface-variant">어제 점검</div></div>
+        <div class="text-right"><div class="text-primary font-bold">26권 확인</div><div class="text-xs text-on-surface-variant">이상 없음</div></div>
       </div>
     </div>
   </section>
 
   <footer class="text-center text-xs text-on-surface-variant space-y-1 pt-2">
-    <div>🔒 모든 처리는 이 기기 안에서 · 서버 전송 없음</div>
-    <div class="font-mono-data">인식 v4 · 검출 v3 · <span id="home-backend">-</span></div>
+    <div>🔒 촬영한 사진은 휴대폰 밖으로 나가지 않아요</div>
+    <details class="text-[10px] opacity-60"><summary class="cursor-pointer">개발자 정보</summary>
+      <span class="font-mono-data">인식 v4 · 검출 v3 · <span id="home-backend">-</span></span></details>
   </footer>
 </div>
 
@@ -150,22 +151,25 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
     </div>
   </section>
 
-  <section class="grid grid-cols-3 gap-3 text-center">
+  <section class="grid grid-cols-2 gap-3 text-center">
     <div class="bg-surface-container border border-primary/40 rounded-xl p-3">
-      <div class="text-2xl font-bold text-primary" id="n-direct">-</div><div class="text-xs">직독 확인</div>
-    </div>
-    <div class="bg-surface-container border border-info/40 rounded-xl p-3">
-      <div class="text-2xl font-bold" style="color:#7cb7ff" id="n-title">-</div><div class="text-xs">제목 복구</div>
+      <div class="text-2xl font-bold text-primary" id="n-ok">-</div><div class="text-xs">확인된 책</div>
     </div>
     <div class="bg-surface-container border border-outline-variant rounded-xl p-3">
-      <div class="text-2xl font-bold text-on-surface-variant" id="n-gray">-</div><div class="text-xs">미확인</div>
+      <div class="text-2xl font-bold text-on-surface-variant" id="n-gray">-</div><div class="text-xs">다시 확인이 필요한 책</div>
     </div>
   </section>
+  <p class="text-xs text-on-surface-variant text-center">회색으로 표시된 책은 가까이서 한 번 더 비추면 대부분 확인돼요</p>
 
   <section class="space-y-3">
-    <h3 class="font-bold">매칭된 도서</h3>
+    <h3 class="font-bold">확인된 도서</h3>
     <div id="res-list" class="bg-surface-container border border-outline-variant rounded-xl divide-y divide-outline-variant max-h-72 overflow-y-auto"></div>
   </section>
+
+  <details class="text-xs text-on-surface-variant">
+    <summary class="cursor-pointer opacity-70">개발자 정보</summary>
+    <div class="font-mono-data pt-2 space-y-1" id="dev-info"></div>
+  </details>
 
   <div class="fixed bottom-0 left-0 w-full px-4 pb-5 pt-3 bg-gradient-to-t from-background to-transparent max-w-md mx-auto" style="left:50%;transform:translateX(-50%)">
     <button onclick="show('scan')" class="w-full bg-primary text-on-primary rounded-xl py-3.5 font-bold text-lg">다른 사진 스캔</button>
@@ -174,7 +178,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
 
 <script>
 const SZ = 1280, CONF = 0.25;
-let sess = null, lastRows = null, lastDemo = 0;
+let sess = null, lastRows = null, lastDemo = 0, lastMs = 0;
 
 function show(v) { document.querySelectorAll('.view').forEach(e => e.classList.remove('active'));
   document.getElementById('view-' + v).classList.add('active'); }
@@ -212,7 +216,7 @@ function drawBoxes(img, rows) {
     ar.appendChild(d);
   }
   const tot = rows.length, m = nd + nt;
-  document.getElementById('scan-count').textContent = `${m}/${tot}권 매칭`;
+  document.getElementById('scan-count').textContent = m ? `${m}권 확인` : `책 ${tot}권 발견`;
   document.getElementById('scan-bar').style.width = (tot ? 100 * m / tot : 0) + '%';
   document.getElementById('btn-result').style.visibility = 'visible';
   return { nd, nt, ng };
@@ -240,15 +244,15 @@ async function loadDemo(n) {
   const img = document.getElementById('photo');
   img.src = `demo/demo${n}.jpg`;
   await img.decode();
-  document.getElementById('scan-title').textContent = n === 1 ? '600번대 광각 (실측 데모)' : '700번대 17° 각도 (실측 데모)';
-  document.getElementById('guide-text').textContent = '실시간 검출: 브라우저 ONNX · 인식·대조: 파이프라인 실측값';
+  document.getElementById('scan-title').textContent = n === 1 ? '600번대 서가' : '700번대 서가';
+  document.getElementById('guide-text').textContent = '초록 = 확인된 책 · 회색 = 가까이서 다시 비춰주세요';
   document.getElementById('guide-chip').style.visibility = 'visible';
-  // 검출은 지금 이 브라우저에서 실행 (온디바이스 증명)
+  // 검출은 지금 이 브라우저에서 실행 (온디바이스) — 소요 ms는 결과 화면 '개발자 정보'에만 표시
   const { ms } = await detect(img);
-  // 인식·매칭 결과는 파이프라인 실측 JSON (PC 파이썬 산출물 — 동일 모델의 오프라인 실행)
+  lastMs = ms;
+  // 인식·매칭 결과는 파이프라인 실측 JSON (동일 모델의 오프라인 실행)
   lastRows = await (await fetch(`demo/demo${n}.json`)).json();
   drawBoxes(img, lastRows);
-  document.getElementById('scan-title').textContent += ` · 검출 ${ms.toFixed(0)}ms`;
 }
 
 document.getElementById('file').onchange = async ev => {
@@ -257,12 +261,12 @@ document.getElementById('file').onchange = async ev => {
   const img = document.getElementById('photo');
   img.src = URL.createObjectURL(f);
   await img.decode();
-  document.getElementById('scan-title').textContent = '검출 중…';
+  document.getElementById('scan-title').textContent = '서가를 살펴보는 중…';
   const { rows, ms } = await detect(img);
-  lastRows = rows;
+  lastRows = rows; lastMs = ms;
   drawBoxes(img, rows);
-  document.getElementById('scan-title').textContent = `라벨 ${rows.length}개 검출 · ${ms.toFixed(0)}ms`;
-  document.getElementById('guide-text').textContent = '인식·대조는 데모 사진에서 체험 가능 (모델 이식 진행 중)';
+  document.getElementById('scan-title').textContent = '내 서가';
+  document.getElementById('guide-text').textContent = `책 ${rows.length}권을 찾았어요 — 청구기호 확인은 곧 제공돼요`;
   document.getElementById('guide-chip').style.visibility = 'visible';
 };
 
@@ -270,25 +274,28 @@ function showResult() {
   if (!lastRows) return;
   const nd = lastRows.filter(r => r.how === '청구기호').length;
   const nt = lastRows.filter(r => r.how === '제목복구').length;
-  const ng = lastRows.length - nd - nt;
-  const pct = lastRows.length ? Math.round(100 * (nd + nt) / lastRows.length) : 0;
-  document.getElementById('n-direct').textContent = nd;
-  document.getElementById('n-title').textContent = nt;
-  document.getElementById('n-gray').textContent = ng;
-  document.getElementById('res-pct').textContent = pct + '%';
-  document.getElementById('res-frac').textContent = `${nd + nt}/${lastRows.length} 라벨 매칭`;
-  document.getElementById('res-title').textContent = lastDemo ? (lastDemo === 1 ? '600번대 광각 스캔 완료' : '700번대 각도 스캔 완료') : '검출 완료 (매칭은 데모 사진에서)';
+  const m = nd + nt, ng = lastRows.length - m;
+  const pct = lastRows.length ? Math.round(100 * m / lastRows.length) : 0;
+  document.getElementById('n-ok').textContent = m + '권';
+  document.getElementById('n-gray').textContent = ng + '권';
+  document.getElementById('res-pct').textContent = m + '권';
+  document.getElementById('res-frac').textContent = '확인 완료';
+  document.getElementById('res-title').textContent = lastDemo ? (lastDemo === 1 ? '600번대 서가 점검 결과' : '700번대 서가 점검 결과') : '내 서가 점검 결과';
   const list = document.getElementById('res-list'); list.innerHTML = '';
   for (const r of lastRows.filter(r => r.call)) {
     const el = document.createElement('div');
     el.className = 'p-3 flex justify-between items-center text-sm';
-    el.innerHTML = `<div><span class="font-mono-data font-semibold">${r.call}</span>
-      <div class="text-xs text-on-surface-variant">${r.title || ''}</div></div>
-      <span class="text-xs px-2 py-0.5 rounded ${r.how === '청구기호' ? 'bg-primary/20 text-primary' : 'text-[#7cb7ff] bg-[#7cb7ff]/15'}">${r.how}</span>`;
+    el.innerHTML = `<div><div class="text-xs text-on-surface-variant">${r.title || ''}</div>
+      <span class="font-mono-data font-semibold">${r.call}</span></div>
+      <span class="material-symbols-outlined text-primary text-[20px]">check_circle</span>`;
     list.appendChild(el);
   }
+  document.getElementById('dev-info').innerHTML =
+    `검출: call_label_yolo3 ONNX · 브라우저 ${navigator.gpu ? 'WebGPU' : 'WASM'} · ${lastMs ? lastMs.toFixed(0) + 'ms' : '-'}<br>` +
+    `라벨 박스 ${lastRows.length} · 직독 ${nd} · 제목복구 ${nt} · 미확인 ${ng} (매칭률 ${pct}%)<br>` +
+    `인식·대조: korean_lowres_v4 파이프라인 실측${lastDemo ? '' : ' (임의 사진은 검출만 온디바이스)'}`;
   show('result');
-  setTimeout(() => document.getElementById('res-ring').style.strokeDashoffset = 440 - 4.4 * pct, 50);
+  setTimeout(() => document.getElementById('res-ring').style.strokeDashoffset = 440 - 4.4 * Math.min(100, pct), 50);
 }
 
 addEventListener('resize', () => { const img = document.getElementById('photo');
