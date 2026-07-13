@@ -101,38 +101,46 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
     <span class="material-symbols-outlined text-primary cursor-pointer" onclick="show('find')">arrow_back</span>
     <h1 class="text-xl font-bold">길 안내</h1>
   </header>
-  <div class="bg-surface-container border border-outline-variant rounded-xl p-4">
-    <div class="text-sm truncate" id="g-title">-</div>
-    <div class="font-mono-data text-xs text-on-surface-variant" id="g-call">-</div>
-  </div>
-  <!-- 단계 1: 층 -->
-  <div class="flex items-start gap-3">
-    <div class="shrink-0 w-8 h-8 rounded-full bg-primary text-on-primary font-bold flex items-center justify-center">1</div>
-    <div class="flex-1 bg-surface-container border border-primary/40 rounded-xl p-4">
-      <div class="text-2xl font-bold text-primary" id="g-floor">3층</div>
-      <div class="text-sm" id="g-room">종합자료실</div>
-      <a href="https://www.ydplib.or.kr/drlib/menu/10113/contents/40028/contents.do" target="_blank"
-         class="text-xs text-on-surface-variant underline">대림도서관 층별 안내 보기 ↗</a>
+  <div class="bg-surface-container border border-outline-variant rounded-xl p-3 flex justify-between items-center">
+    <div class="min-w-0">
+      <div class="text-sm truncate" id="g-title">-</div>
+      <div class="font-mono-data text-xs text-on-surface-variant" id="g-call">-</div>
     </div>
+    <span class="shrink-0 text-xs bg-primary/20 text-primary rounded-lg px-2.5 py-1.5 font-bold" id="g-floorchip">3층 종합자료실</span>
   </div>
-  <!-- 단계 2: 서가 -->
-  <div class="flex items-start gap-3">
-    <div class="shrink-0 w-8 h-8 rounded-full bg-surface-variant text-on-surface font-bold flex items-center justify-center">2</div>
-    <div class="flex-1 bg-surface-container border border-outline-variant rounded-xl p-4">
-      <div class="font-bold" id="g-sec">-</div>
-      <div class="text-xs text-on-surface-variant">서가 옆면의 분류 표지판을 따라가세요</div>
-    </div>
+
+  <!-- 구간 안내 지도 -->
+  <div class="bg-surface-container border border-outline-variant rounded-xl p-3 space-y-2">
+    <svg id="g-map" viewBox="0 0 320 230" class="w-full">
+      <rect x="6" y="6" width="308" height="196" rx="10" fill="#0b1326" stroke="#3d4a3d" stroke-width="2"/>
+      <!-- 서가 구역 (2열 × 3행) -->
+      <g font-family="Geist,monospace" font-size="13" font-weight="600" text-anchor="middle">
+        <rect id="z-000" x="26"  y="24" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="89"  y="50" fill="#869585">000–299</text>
+        <rect id="z-300" x="168" y="24" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="231" y="50" fill="#869585">300–599</text>
+        <rect id="z-600" x="26"  y="80" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="89"  y="106" fill="#869585">600번대</text>
+        <rect id="z-700" x="168" y="80" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="231" y="106" fill="#869585">700번대</text>
+        <rect id="z-800" x="26"  y="136" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="89"  y="162" fill="#869585">800번대</text>
+        <rect id="z-900" x="168" y="136" width="126" height="42" rx="4" fill="#171f33" stroke="#3d4a3d"/><text x="231" y="162" fill="#869585">900번대</text>
+      </g>
+      <!-- 입구/현위치 -->
+      <rect x="130" y="196" width="60" height="12" fill="#0b1326"/>
+      <text x="160" y="222" font-size="11" fill="#bccbb9" text-anchor="middle">▲ 입구</text>
+      <circle cx="160" cy="200" r="5" fill="#7cb7ff"><animate attributeName="r" values="4;6;4" dur="1.6s" repeatCount="indefinite"/></circle>
+      <!-- 경로 + 핀 (JS가 배치) -->
+      <path id="g-path" d="" stroke="#4be277" stroke-width="2.5" stroke-dasharray="6 5" fill="none" stroke-linecap="round"/>
+      <text id="g-pin" x="0" y="0" font-size="20" text-anchor="middle">📍</text>
+    </svg>
+    <div class="text-[10px] text-on-surface-variant text-center">개념 배치도 — 실제 서가 배치는
+      <a href="https://www.ydplib.or.kr/drlib/menu/10113/contents/40028/contents.do" target="_blank" class="underline">층별 안내 ↗</a> 참고</div>
   </div>
-  <!-- 단계 3: LibAR -->
-  <div class="flex items-start gap-3">
-    <div class="shrink-0 w-8 h-8 rounded-full bg-surface-variant text-on-surface font-bold flex items-center justify-center">3</div>
-    <div class="flex-1 bg-primary-container text-on-primary-container rounded-xl p-4 space-y-2" style="animation:pulse-glow 2s infinite">
-      <div class="font-bold">서가 앞에 도착하셨나요?</div>
-      <div class="text-xs opacity-90">카메라로 비추면 찾는 책이 어느 칸에 있는지 짚어드려요</div>
-      <button onclick="show('scan')" class="w-full bg-background/20 border border-on-primary-container/30 rounded-lg py-2.5 font-bold flex items-center justify-center gap-2">
-        <span class="material-symbols-outlined">photo_camera</span> LibAR 스캔 시작
-      </button>
-    </div>
+
+  <!-- 서가 스캔 유도 -->
+  <div class="bg-primary-container text-on-primary-container rounded-xl p-4 space-y-2" style="animation:pulse-glow 2s infinite">
+    <div class="font-bold" id="g-sec">-</div>
+    <div class="text-xs opacity-90">서가 앞에서 카메라로 비추면 찾는 책이 어느 칸에 있는지 짚어드려요</div>
+    <button onclick="show('scan')" class="w-full bg-background/20 border border-on-primary-container/30 rounded-lg py-2.5 font-bold flex items-center justify-center gap-2">
+      <span class="material-symbols-outlined">photo_camera</span> 서가 스캔 시작
+    </button>
   </div>
 </div>
 
@@ -419,13 +427,21 @@ function renderFind(q) {
 // 층·자료실 배치 — 현장 확인 후 여기만 고치면 됨 (출처: ydplib 검색, 종합자료실 3층)
 const FLOORS = { "600번대": ["3층", "종합자료실"], "700번대": ["3층", "종합자료실"],
                  "800번대": ["3층", "종합자료실"], "862-912": ["3층", "종합자료실"] };
+const MAP_ZONE = { "600번대": "z-600", "700번대": "z-700", "800번대": "z-800", "862-912": "z-900" };
 function guideSection(b) {
   const [fl, room] = FLOORS[b.sec] || ["-", "자료실"];
   document.getElementById('g-title').textContent = b.title || '(제목 미상)';
   document.getElementById('g-call').textContent = b.call;
-  document.getElementById('g-floor').textContent = fl;
-  document.getElementById('g-room').textContent = room;
+  document.getElementById('g-floorchip').textContent = `${fl} ${room}`;
   document.getElementById('g-sec').textContent = `${b.sec} 서가로 가세요`;
+  // 지도: 대상 구역 하이라이트 + 입구→구역 경로 + 핀
+  document.querySelectorAll('#g-map rect[id^=z-]').forEach(z => { z.setAttribute('fill', '#171f33'); z.setAttribute('stroke', '#3d4a3d'); });
+  const z = document.getElementById(MAP_ZONE[b.sec] || 'z-600');
+  z.setAttribute('fill', 'rgba(75,226,119,.18)'); z.setAttribute('stroke', '#4be277');
+  const cx = +z.getAttribute('x') + z.getAttribute('width')/2, cy = +z.getAttribute('y') + z.getAttribute('height')/2;
+  document.getElementById('g-path').setAttribute('d', `M160,196 L160,${cy+34} L${cx},${cy+34} L${cx},${cy+24}`);
+  const pin = document.getElementById('g-pin');
+  pin.setAttribute('x', cx); pin.setAttribute('y', +z.getAttribute('y') - 4);
   show('guide');
 }
 document.getElementById('find-q').oninput = e => renderFind(e.target.value);
