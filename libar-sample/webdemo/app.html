@@ -95,6 +95,47 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
   <div id="find-list" class="bg-surface-container border border-outline-variant rounded-xl divide-y divide-outline-variant max-h-[60vh] overflow-y-auto"></div>
 </div>
 
+<!-- ═══════ 길찾기 화면: 층 → 서가 → LibAR 스캔 유도 ═══════ -->
+<div id="view-guide" class="view max-w-md mx-auto px-4 py-6 space-y-4">
+  <header class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary cursor-pointer" onclick="show('find')">arrow_back</span>
+    <h1 class="text-xl font-bold">길 안내</h1>
+  </header>
+  <div class="bg-surface-container border border-outline-variant rounded-xl p-4">
+    <div class="text-sm truncate" id="g-title">-</div>
+    <div class="font-mono-data text-xs text-on-surface-variant" id="g-call">-</div>
+  </div>
+  <!-- 단계 1: 층 -->
+  <div class="flex items-start gap-3">
+    <div class="shrink-0 w-8 h-8 rounded-full bg-primary text-on-primary font-bold flex items-center justify-center">1</div>
+    <div class="flex-1 bg-surface-container border border-primary/40 rounded-xl p-4">
+      <div class="text-2xl font-bold text-primary" id="g-floor">3층</div>
+      <div class="text-sm" id="g-room">종합자료실</div>
+      <a href="https://www.ydplib.or.kr/drlib/menu/10113/contents/40028/contents.do" target="_blank"
+         class="text-xs text-on-surface-variant underline">대림도서관 층별 안내 보기 ↗</a>
+    </div>
+  </div>
+  <!-- 단계 2: 서가 -->
+  <div class="flex items-start gap-3">
+    <div class="shrink-0 w-8 h-8 rounded-full bg-surface-variant text-on-surface font-bold flex items-center justify-center">2</div>
+    <div class="flex-1 bg-surface-container border border-outline-variant rounded-xl p-4">
+      <div class="font-bold" id="g-sec">-</div>
+      <div class="text-xs text-on-surface-variant">서가 옆면의 분류 표지판을 따라가세요</div>
+    </div>
+  </div>
+  <!-- 단계 3: LibAR -->
+  <div class="flex items-start gap-3">
+    <div class="shrink-0 w-8 h-8 rounded-full bg-surface-variant text-on-surface font-bold flex items-center justify-center">3</div>
+    <div class="flex-1 bg-primary-container text-on-primary-container rounded-xl p-4 space-y-2" style="animation:pulse-glow 2s infinite">
+      <div class="font-bold">서가 앞에 도착하셨나요?</div>
+      <div class="text-xs opacity-90">카메라로 비추면 찾는 책이 어느 칸에 있는지 짚어드려요</div>
+      <button onclick="show('scan')" class="w-full bg-background/20 border border-on-primary-container/30 rounded-lg py-2.5 font-bold flex items-center justify-center gap-2">
+        <span class="material-symbols-outlined">photo_camera</span> LibAR 스캔 시작
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ 스캔 화면 (실시간 하단 결과 시트) ═══════ -->
 <div id="view-scan" class="view fixed inset-0 overflow-hidden">
   <div class="absolute inset-0 bg-black">
@@ -375,8 +416,17 @@ function renderFind(q) {
   }
   if (!hits.length) el.innerHTML = '<div class="p-4 text-sm text-on-surface-variant">이 도서관 장서목록에 없는 책이에요</div>';
 }
+// 층·자료실 배치 — 현장 확인 후 여기만 고치면 됨 (출처: ydplib 검색, 종합자료실 3층)
+const FLOORS = { "600번대": ["3층", "종합자료실"], "700번대": ["3층", "종합자료실"],
+                 "800번대": ["3층", "종합자료실"], "862-912": ["3층", "종합자료실"] };
 function guideSection(b) {
-  alert(`『${b.title}』\n${b.call}\n\n${b.sec} 서가에 있어요.\n그 서가 앞에서 '스캔 시작'을 누르면 정확한 칸을 짚어드려요.`);
+  const [fl, room] = FLOORS[b.sec] || ["-", "자료실"];
+  document.getElementById('g-title').textContent = b.title || '(제목 미상)';
+  document.getElementById('g-call').textContent = b.call;
+  document.getElementById('g-floor').textContent = fl;
+  document.getElementById('g-room').textContent = room;
+  document.getElementById('g-sec').textContent = `${b.sec} 서가로 가세요`;
+  show('guide');
 }
 document.getElementById('find-q').oninput = e => renderFind(e.target.value);
 
