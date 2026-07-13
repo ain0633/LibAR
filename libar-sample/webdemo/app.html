@@ -529,7 +529,7 @@ document.getElementById('find-q').oninput = e => { if (findIdx) renderFind(e.tar
 
 // ── 옵트인 크롭 수집: 동의 1회(기기에 기억) → 스캔마다 드라이브 수신함으로 자동 업로드 ──
 // UPLOAD_URL = Apps Script 웹앱(드라이브 수신함). 미설정·실패 시 zip 다운로드 폴백.
-const UPLOAD_URL = '';   // 예: 'https://script.google.com/macros/s/XXXX/exec'
+const UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbwd36Iufa0geew10kenSHKur7Nsf_UNhUhX-KgvpdtfPF-9Yy6vCI2m-u0FGQs93q-c6Q/exec';   // 팀 공유 드라이브 수신함 (Apps Script, curl+드라이브 검증 완료)
 const cropBag = [];      // {blob, call, how, box, scan} — 미동의 상태의 대기분
 let scanSeq = 0, sentN = 0;
 const optin = () => localStorage.getItem('libar_optin') === '1';
