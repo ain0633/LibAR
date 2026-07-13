@@ -411,7 +411,7 @@ function renderFind(q) {
 // ── 대림도서관 층별 배치도 (공식 홈페이지 지도를 LibAR 디자인으로 옮김) ──
 // rooms: [라벨, x, y, w, h, 종류('room'=일반 'space'=부속 'core'=설비)] · icons: [기호, x, y]
 // 3F 등 나머지 층은 홈페이지 캡처 확보 후 같은 형식으로 추가
-const FLOORPLANS = {
+const FLOORPLANS = {   // 공식 층별 안내 이미지(img_facility_floor_*.png)를 그대로 옮김
   "4F": { outline: "M20,20 H340 V150 H250 V190 H180 V150 H20 Z",
     rooms: [
       ["사무실",        30,  28, 190, 52, "space"],
@@ -421,8 +421,40 @@ const FLOORPLANS = {
       ["테라스",        184, 152,  64, 36, "space"],
     ],
     icons: [["EV", 236, 52], ["🚻", 306, 40], ["🪜", 240, 110]] },
-  "3F": null, "2F": null, "1F": null, "B1F": null,   // 캡처 대기 — 자리만 예약
+  "3F": { outline: "M6,22 H354 V186 H244 V214 H188 V186 H6 Z",
+    rooms: [
+      ["일반자료실",     12,  30, 180, 80, "room"],
+      ["도서정리실",     272,  94,  76, 32, "space"],
+      ["",             190, 150,  52, 34, "void"],
+    ],
+    icons: [["EV", 258, 60], ["🚻", 324, 40], ["🪜", 262, 110]] },
+  "2F": { outline: "M6,20 H354 V150 H180 V196 H90 V226 H6 Z",
+    rooms: [
+      ["어린이 유아자료", 12,  26, 184, 66, "room"],
+      ["휴게실&수유실",   284,  78,  66, 36, "room"],
+      ["테라스",         36, 158, 134, 30, "space"],
+    ],
+    icons: [["EV", 258, 52], ["🚻", 324, 36], ["🪜", 262, 100], ["🪜", 34, 208]] },
+  "1F": { outline: "M6,20 H354 V150 H180 V196 H90 V226 H6 Z",
+    rooms: [
+      ["개방형열람실",    12,  26, 158, 112, "room"],
+      ["",              12, 142,  48,  40, "void"],
+      ["",             288,  80,  26,  32, "void"],
+    ],
+    icons: [["EV", 258, 52], ["🚻", 324, 36], ["🪜", 262, 108], ["🪜", 34, 208]] },
+  "B1F": { outline: "M6,8 H354 V196 H90 V226 H6 Z",
+    rooms: [
+      ["조정실",        152,  12,  44, 22, "space"],
+      ["창고",          245,  12, 105, 22, "space"],
+      ["다목적실",       12,  38, 178, 56, "room"],
+      ["커뮤니티",       60, 112, 176, 32, "room"],
+      ["보존서고실",     286, 128,  64, 28, "room"],
+      ["",             288,  88,  26,  32, "void"],
+    ],
+    icons: [["EV", 258, 58], ["🪜", 262, 104], ["🪜", 34, 208]] },
 };
+// 지도 표기와 장서데이터 표기가 다른 방 (같은 공간)
+const ROOM_ALIAS = { "종합자료실": "일반자료실" };
 
 function drawFloor(fl, hlRoom) {
   const svg = document.getElementById('g-map');
@@ -442,7 +474,13 @@ function drawFloor(fl, hlRoom) {
   if (!plan) { svg.innerHTML = `<text x="180" y="125" text-anchor="middle" font-size="13" fill="#bccbb9">${fl} 배치도 준비 중</text>`; return; }
   let s = `<path d="${plan.outline}" fill="#0b1326" stroke="#3d4a3d" stroke-width="2"/>`;
   for (const [label, x, y, w, h, kind] of plan.rooms) {
-    const hl = label === hlRoom;
+    if (kind === 'void') {   // 개방 상부·샤프트 (원본 지도의 X 박스)
+      s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#3d4a3d"/>` +
+           `<line x1="${x}" y1="${y}" x2="${x+w}" y2="${y+h}" stroke="#3d4a3d"/>` +
+           `<line x1="${x+w}" y1="${y}" x2="${x}" y2="${y+h}" stroke="#3d4a3d"/>`;
+      continue;
+    }
+    const hl = label === hlRoom || label === ROOM_ALIAS[hlRoom];
     const fill = hl ? 'rgba(75,226,119,.20)' : kind === 'room' ? '#1c2740' : '#131b2e';
     const stroke = hl ? '#4be277' : '#3d4a3d';
     const tcol = hl ? '#4be277' : kind === 'room' ? '#b9c8de' : '#869585';
