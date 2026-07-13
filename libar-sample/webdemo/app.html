@@ -87,6 +87,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
 <div id="view-scan" class="view fixed inset-0 overflow-hidden">
   <div class="absolute inset-0 bg-black">
     <img id="photo" class="absolute inset-0 w-full h-full object-contain" alt="">
+    <video id="cam" class="absolute inset-0 w-full h-full object-contain hidden" autoplay muted playsinline></video>
   </div>
   <div id="ar" class="absolute inset-0 pointer-events-none"></div>
 
@@ -98,6 +99,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
         <h1 class="font-bold text-sm" id="scan-title">사진을 선택하세요</h1>
       </div>
       <div class="flex gap-2 text-xs" style="pointer-events:auto">
+        <button onclick="toggleLive()" id="btn-live" class="bg-primary/25 text-primary border border-primary/50 rounded-lg px-2.5 py-1.5 font-bold">🔴 라이브</button>
         <label class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5 cursor-pointer">📷<input type="file" accept="image/*" id="file" class="hidden"></label>
         <button onclick="loadDemo(1)" class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5">데모1</button>
         <button onclick="loadDemo(2)" class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5">데모2</button>
@@ -172,8 +174,9 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   } catch(e) { document.getElementById('home-backend').textContent = '모델 로드 실패'; }
 })();
 
-function fitRect(img) {
-  const vw = innerWidth, vh = innerHeight, W = img.naturalWidth, H = img.naturalHeight;
+function dims(el) { return { W: el.videoWidth || el.naturalWidth, H: el.videoHeight || el.naturalHeight }; }
+function fitRect(el) {
+  const vw = innerWidth, vh = innerHeight, { W, H } = dims(el);
   const s = Math.min(vw / W, vh / H);
   return { s, ox: (vw - W * s) / 2, oy: (vh - H * s) / 2 };
 }
@@ -187,7 +190,7 @@ function drawBoxes(img, rows) {
     const d = document.createElement('div');
     d.style.cssText = `position:absolute;left:${x0*s+ox}px;top:${y0*s+oy}px;width:${(x1-x0)*s}px;height:${(y1-y0)*s}px;border-radius:2px;`;
     if (r.mis) { d.style.border = '2px solid rgba(255,107,100,.95)'; d.style.background = 'rgba(255,107,100,.18)'; }
-    else if (r.call) { d.style.border = '2px solid rgba(75,226,119,.85)'; d.style.background = 'rgba(75,226,119,.12)'; }
+    else if (r.call || r.live) { d.style.border = '2px solid rgba(75,226,119,.85)'; d.style.background = 'rgba(75,226,119,.12)'; }
     else { d.style.border = '1px solid rgba(134,149,133,.55)'; d.style.background = 'rgba(45,52,73,.22)'; }
     ar.appendChild(d);
   }
@@ -235,7 +238,7 @@ function fillSheet(img, rows) {
 }
 
 async function detect(img) {
-  const W = img.naturalWidth, H = img.naturalHeight, r = SZ / Math.max(W, H);
+  const { W, H } = dims(img); const r = SZ / Math.max(W, H);
   const off = new OffscreenCanvas(SZ, SZ), ox = off.getContext('2d');
   ox.fillStyle = 'rgb(114,114,114)'; ox.fillRect(0, 0, SZ, SZ);
   ox.drawImage(img, 0, 0, W * r, H * r);
@@ -263,7 +266,44 @@ function renderAll(img, rows, title) {
     `직독 ${nd} · 제목복구 ${nt} · 인식/대조 korean_lowres_v4 파이프라인 실측`;
 }
 
+// ── 라이브 모드: 카메라 스트림 위 실시간 검출 루프 ──
+let live = false, stream = null;
+async function toggleLive() {
+  const cam = document.getElementById('cam'), photo = document.getElementById('photo'),
+        btn = document.getElementById('btn-live');
+  if (live) {                                        // 정지: 마지막 프레임을 사진으로 고정
+    live = false;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    cam.classList.add('hidden'); btn.textContent = '🔴 라이브';
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    document.getElementById('scan-title').textContent = '카메라 미지원 (HTTPS 또는 localhost 필요)'; return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
+  } catch(e) { document.getElementById('scan-title').textContent = '카메라 권한이 필요해요'; return; }
+  cam.srcObject = stream; await cam.play();
+  cam.classList.remove('hidden'); photo.removeAttribute('src');
+  btn.textContent = '⏸ 정지'; live = true;
+  setSheet(false);
+  let n = 0, tSum = 0;
+  while (live) {                                     // 직렬 루프: 추론 끝나는 대로 다음 프레임
+    const rows = await detect(cam);
+    if (!live) break;
+    rows.forEach(r => r.live = true);
+    drawBoxes(cam, rows);
+    n++; tSum += lastMs;
+    document.getElementById('scan-title').textContent = `📚 책 ${rows.length}권 보임 — 천천히 움직여주세요`;
+    document.getElementById('c-gray').textContent = rows.length;
+    document.getElementById('dev-info').innerHTML =
+      `라이브 검출 ${(1000/(tSum/n)).toFixed(1)} FPS · ${lastMs.toFixed(0)}ms/프레임 · ${navigator.gpu ? 'WebGPU' : 'WASM'}`;
+    await new Promise(r => setTimeout(r, 30));       // UI 숨쉴 틈
+  }
+  document.getElementById('ar').innerHTML = '';
+}
+
 async function loadDemo(n) {
+  if (live) toggleLive();
   const img = document.getElementById('photo');
   img.src = `demo/demo${n}.jpg`;
   await img.decode();
@@ -274,6 +314,7 @@ async function loadDemo(n) {
 
 document.getElementById('file').onchange = async ev => {
   const f = ev.target.files[0]; if (!f || !sess) return;
+  if (live) toggleLive();
   const img = document.getElementById('photo');
   img.src = URL.createObjectURL(f);
   await img.decode();
