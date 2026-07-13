@@ -14,7 +14,7 @@ def b64(path, width=1400, q=72):
     if w > width: im = cv2.resize(im, (width, int(h*width/w)))
     return base64.b64encode(cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, q])[1]).decode()
 
-img_home = b64(SCRATCH/"app_home.png", width=420, q=85)
+img_home = b64(SCRATCH/"app_home3.png", width=500, q=85)
 img_walk = b64(HERE/"hybrid_v3_results/yolo_동영상1_f00060_ar.jpg")
 img_pairs = b64(HERE/"real_rec_data_v3/pair_montage_3rd.jpg", width=1100, q=82)
 
