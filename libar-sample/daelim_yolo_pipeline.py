@@ -23,6 +23,7 @@ CATALOG = Path(opt("--catalog", HERE/"daelim_catalog.csv"))
 REC_DIR = opt("--rec_dir", "korean_lowres_v4_rec_infer")
 YOLO = opt("--yolo", "call_label_yolo2/best.onnx")
 CONF = float(opt("--conf", 0.25))
+NO_TITLE = "--no_title" in sys.argv                 # 걷기 실시간 경로: 직독+투표만 (제목복구는 최종 화면용)
 
 # ── 카탈로그 + 매칭 (daelim_closeup.py 검증본 복사) ──
 def nn(s):
@@ -128,12 +129,13 @@ tok_cache = json.load(open(CACHE, encoding="utf-8")) if CACHE.exists() else {}
 
 _ocr_title = None
 def get_ocr_title():
-    """제목은 기존 rec (이원화 — 파인튜닝 rec은 큰 글자에서 퇴화)."""
+    """제목은 기존 rec (이원화 — 파인튜닝 rec은 큰 글자에서 퇴화).
+    det도 mobile: 제목은 크롭에서 가장 큰 글자라 server det 불필요 (server는 박스당 42초 실측 → 병목)."""
     global _ocr_title
     if _ocr_title is None:
         _ocr_title = PaddleOCR(lang="korean", enable_mkldnn=False, use_doc_orientation_classify=False,
                                use_doc_unwarping=False, use_textline_orientation=False,
-                               text_detection_model_name="PP-OCRv5_server_det",
+                               text_detection_model_name="PP-OCRv5_mobile_det",
                                text_recognition_model_name="korean_PP-OCRv5_mobile_rec")
     return _ocr_title
 
@@ -147,10 +149,11 @@ def _ocr_once(img, eng=None):
             out2.append((txt, float(p[:, 0].mean()), float(p[:, 1].mean())))
     return out2
 
-def ocr_tokens(img, eng=None, chunk=1280, ov=120, maxh=1000):
-    """daelim_closeup.py 검증본: 저해상 업스케일 + 가로 청크 분할."""
+def ocr_tokens(img, eng=None, chunk=1280, ov=120, maxh=1000, up=True):
+    """daelim_closeup.py 검증본: 저해상 업스케일 + 가로 청크 분할.
+    up=False: 제목 크롭용 — 제목 글자는 라벨보다 커서 업스케일 불필요(×3 확대가 det 비용 9배)."""
     h, w = img.shape[:2]
-    if h < 320: f = min(3.0, 960/h)
+    if h < 320: f = min(3.0, 960/h) if up else 1.0
     else: f = min(1.0, maxh/h)
     if f != 1.0:
         interp = cv2.INTER_LANCZOS4 if f > 1 else cv2.INTER_AREA
@@ -179,6 +182,9 @@ for b in bxs:
     rows_of_boxes[-1].append(b); last_y = yc
 
 t0 = time.time()
+# 줄 간격(=책등 높이 근사): 제목 크롭 높이 상한 — 윗줄 침범·과대 크롭 방지
+row_yc = [float(np.median([(b[1]+b[3])/2 for b in r])) for r in rows_of_boxes]
+pitch = float(np.median(np.diff(row_yc))) if len(row_yc) >= 2 else H*0.35
 rows_out = []; rows_bottom = {}
 for ri, rboxes in enumerate(rows_of_boxes):
     if len(rboxes) < 2:  # 한 박스짜리 줄은 잡음 가능성 — 그래도 처리
@@ -232,20 +238,21 @@ for ri, rboxes in enumerate(rows_of_boxes):
     n_rec = 0
     prev_bottom = rows_bottom.get(ri-1, 0)
     for z in this_row:
-        if z["call"]: continue
+        if NO_TITLE or z["call"]: continue
         bx0, by0r, bx1, by1r = z["rbox"]
         wid = bx1 - bx0
         tx0, tx1 = int(bx0 - wid*0.15), int(bx1 + wid*0.15)
-        ty0 = max(0, int(prev_bottom), int(by0r - H*0.55)); ty1 = int(by0r + 20)
-        tkey = f"{key}_t_{int(bx0)}"
+        ty0 = max(0, int(prev_bottom), int(by0r - min(H*0.55, pitch*0.95))); ty1 = int(by0r + 20)
+        tkey = f"{key}_t3_{int(bx0)}"          # _t_(업스케일·전체높이)·_t2_(server det) 구세대 캐시와 분리
         if tkey in tok_cache:
             cand_txts = tok_cache[tkey]
         else:
             tc = rot[ty0:ty1, max(0, tx0):min(W, tx1)]
             if not tc.size: continue
-            cand_txts = [" ".join(t[0] for t in ocr_tokens(r2, get_ocr_title()))
+            cand_txts = [" ".join(t[0] for t in ocr_tokens(r2, get_ocr_title(), up=False))
                          for r2 in (cv2.rotate(tc, cv2.ROTATE_90_COUNTERCLOCKWISE), tc)]
             tok_cache[tkey] = cand_txts
+            json.dump(tok_cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)  # 박스 단위 저장(중단 내성)
         best_row, best_sc = None, 0.0
         for txt2 in cand_txts:
             trow, sc2 = match_title(txt2)
