@@ -29,10 +29,11 @@ for rd in (HERE/"video_results/out_ondevice",):
         truth |= {r["call"] for r in m if r.get("how") == "청구기호"}
 print(f"[정답지] 근접급 확정 직독 {len(truth)}권 (900번대 세트+동영상 근접 프레임)")
 
-# ── 걷기 하이브리드 프레임 결과 집계 ──
+# ── 걷기 프레임 결과 집계 (하이브리드 yolo_* 또는 휴리스틱 closeup*_ftN — 같은 잣대 비교용) ──
+PAT = opt("--pattern", "yolo_동영상*_result.json")
 vids = defaultdict(Counter)          # 동영상N → call → 등장 프레임 수
-for rf in sorted(glob.glob(str(RES/"yolo_동영상*_result.json"))):
-    m = re.search(r"yolo_(동영상\d)_f\d+_result", os.path.basename(rf))
+for rf in sorted(glob.glob(str(RES/PAT))):
+    m = re.search(r"(동영상\d)_f\d+", os.path.basename(rf))
     if not m: continue
     rows = json.load(open(rf, encoding="utf-8"))
     for c in {r["call"] for r in rows if r["call"]}:

@@ -206,6 +206,10 @@ for ri, rboxes in enumerate(rows_of_boxes):
                    max(p[0] for p in pts), max(p[1] for p in pts)))
     sy0 = max(0, int(min(b[1] for b in rb)))
     sy1 = min(H, int(max(b[3] for b in rb)))
+    # 기각 실험(07-13): 동영상 프레임에서 v2 검출이 책등 전체 박스(높이 305px↑)를 뱉어 스트립이
+    # 두꺼워지고 ×3 업스케일 미발동 → 걷기 판독률 89% vs 휴리스틱 95%. 하단 45% 슬라이스로 절단
+    # 시도 → 4프레임 실측 +1/-2 혼조·속도 2배 악화로 기각. 근본 원인은 검출기 학습 데이터(동영상
+    # 라벨 박스가 느슨) — 수술은 파이프라인이 아니라 YOLO v3 재학습(타이트 라벨)에서.
     key = f"r{ri}_{sy0}_{sy1}_{deg:.1f}"
     rot = cv2.warpAffine(bgr, M, (W, H)) if abs(deg) > 1.5 else bgr
     if key in tok_cache:
@@ -234,6 +238,30 @@ for ri, rboxes in enumerate(rows_of_boxes):
                          "call": row["call"] if row else None,
                          "title": row["title"][:20] if row else None,
                          "how": "청구기호" if row else None, "score": round(sc, 2)})
+    # ── 클러스터 채널(병렬): 전체 토큰을 x-연쇄로 묶어 독립 매칭 — 미검출 라벨(재현율 밖) 회수 ──
+    # 걷기 151프레임 실측: 박스 배정만으로 판독률 89% vs 휴리스틱 95% — 미검출 책의 토큰이 이웃
+    # 박스에 흡수돼 유실. 미배정 토큰만 쓰는 폴백은 촘촘한 프레임에서 미발동(캡 60px > 박스 간격 33px)
+    # 이라 기각. 박스 배정은 그대로 두고 휴리스틱 클러스터 매칭을 병렬 채널로 — call 중복만 제거.
+    have = {z["call"] for z in this_row if z["call"]}
+    n_fb = 0
+    if toks and rb:
+        wmed = float(np.median([b[2]-b[0] for b in rb]))
+        ts = sorted(toks, key=lambda t: t[1])
+        cl = [[ts[0]]]
+        for t in ts[1:]:
+            if t[1] - cl[-1][-1][1] > wmed*0.7: cl.append([])
+            cl[-1].append(t)
+        for c2 in cl:
+            txt = " ".join(t[0] for t in sorted(c2, key=lambda t: (round(t[2]/30), t[1])))
+            row, sc = match(txt)
+            if not row or row["call"] in have: continue
+            xs = [t[1] for t in c2]
+            fb = (min(xs)-wmed*0.4, sy0, max(xs)+wmed*0.4, sy1)
+            this_row.append({"box": [int(v) for v in fb], "rbox": fb, "band": ri, "read": txt,
+                             "call": row["call"], "title": row["title"][:20],
+                             "how": "청구기호", "score": round(sc, 2)})
+            have.add(row["call"]); n_fb += 1
+    if n_fb: print(f"[줄{ri}] 클러스터 채널 +{n_fb}권 (미검출 라벨 회수)")
     # ── 제목 복구 (daelim_closeup 검증본 이식): 미매칭 박스는 라벨 위 제목 기둥을 기존 rec으로 ──
     n_rec = 0
     prev_bottom = rows_bottom.get(ri-1, 0)
