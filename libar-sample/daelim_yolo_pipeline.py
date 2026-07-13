@@ -159,6 +159,8 @@ def ocr_tokens(img, eng=None, chunk=1280, ov=120, maxh=1000, up=True):
         interp = cv2.INTER_LANCZOS4 if f > 1 else cv2.INTER_AREA
         img = cv2.resize(img, None, fx=f, fy=f, interpolation=interp)
         h, w = img.shape[:2]
+    if f > 1: ov = int(ov*f)   # 겹침은 원본 기준 유지 — ×3 확대 시 120px이 원본 40px로 줄어
+                               # 라벨 폭(~90px)보다 좁아져 청크 경계 라벨이 통째로 유실됐음 (f00060 13→10 실측)
     out2 = []
     if max(h, w) <= chunk + ov:
         out2 = _ocr_once(img, eng)
@@ -326,6 +328,41 @@ n_call = sum(1 for z in rows_out if z["call"])
 uniq = len({z["call"] for z in rows_out if z["call"]})
 print(f"[매칭] {n_call}/{len(rows_out)} 박스 · 고유 {uniq}권")
 
+# ── 행별 순서(LIS) 오배열 판정 — daelim_closeup 검증본 이식 (4축 완성: 검출→인식→대조→판정) ──
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+def hkey(ch):
+    o = ord(ch)
+    if 0xAC00 <= o <= 0xD7A3:
+        i = o - 0xAC00
+        return (i//588, i%588//28 + 1, i%28)
+    if ch in _CHO: return (_CHO.index(ch), 0, 0)
+    return (ord(ch)+100, 0, 0)
+def authkey(a):
+    m = re.match(r"^([가-힣A-Z]+)(\d*)(.*)$", a)
+    if not m: return (a,)
+    head, num, tail = m.groups()
+    return (tuple(hkey(c) for c in head),
+            float("0." + num) if num else 0,       # 커터 번호는 소수 취급: 295(.295) < 58(.58)
+            tuple(hkey(c) for c in tail))
+def sortkey(call):
+    p = call.split("-"); cls2 = re.sub(r"^[가-힣A-Z]+", "", p[0])
+    vol = 0
+    if len(p) > 2:
+        mv = re.search(r"\d+", p[2]); vol = int(mv.group(0)) if mv else 0
+    return (float(cls2) if re.match(r"^[\d.]+$", cls2) else 999,
+            authkey(nn(p[1])) if len(p) > 1 else (), vol)
+import libar_ondevice as L
+n_mis = 0
+for bi2 in {z["band"] for z in rows_out}:
+    seq = [z for z in rows_out if z["band"] == bi2 and z["call"]]
+    seq.sort(key=lambda z: z["box"][0])
+    mis = L.lis_misplaced([sortkey(z["call"]) for z in seq])
+    for j, z in enumerate(seq):
+        # 플래그는 직독만: 제목복구는 퍼지 매칭(오지정 가능)이라 오배열 경보의 근거로 쓰지 않는다
+        z["mis"] = (j in mis) and z["how"] == "청구기호"
+        if z["mis"]: n_mis += 1
+if n_mis: print(f"[오배열 의심] {n_mis}건")
+
 # ── AR 렌더 + 저장 ──
 im = im0.convert("RGBA")
 d = ImageDraw.Draw(im, "RGBA")
@@ -334,6 +371,7 @@ except Exception: fs = ImageFont.load_default()
 for z in rows_out:
     x0, y0, x1, y1 = z["box"]
     if z["call"] is None: c = (150, 150, 150)
+    elif z.get("mis"): c = (235, 60, 60)
     elif z["how"] == "제목복구": c = (50, 130, 240)
     else: c = (40, 190, 90)
     d.rectangle([x0, y0, x1, y1], outline=c+(255,), width=6)
