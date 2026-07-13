@@ -33,6 +33,8 @@ files.zip
 *.pb
 *.pt.bak
 libar-sample/korean_lowres_rec_infer/
+libar-sample/korean_lowres_v*_rec_infer/
+libar-sample/call_label_yolo/
 
 # ── 원본 촬영 데이터 (도서관 제공 — 저장소 제외) ──
 대림데이터/
@@ -44,12 +46,18 @@ libar-sample/korean_lowres_rec_infer/
 
 # ── 장서 원본 데이터 (도서관 제공 CSV) ──
 libar-sample/daelim_catalog.csv
+libar-sample/catalog_*.csv
 libar-sample/books_4558.csv
 libar-sample/newton_*.csv
 
 # ── 실험 중간 산출물 (재생성 가능) ──
 libar-sample/*_log.txt
 libar-sample/daelim_v3_results/
+libar-sample/m2_results/
+libar-sample/video_results/
+libar-sample/video_v4_results/
+libar-sample/real_rec_data*/
+libar-sample/yolo_labelset/
 libar-sample/dataset_*/
 libar-sample/frames/
 libar-sample/synth_rec/
