@@ -44,7 +44,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
       <div class="font-bold text-lg">스캔 시작</div>
       <div class="text-xs opacity-80">서가를 비추면 잘못 꽂힌 책을 찾아드려요</div>
     </button>
-    <button class="bg-surface-container border border-outline-variant rounded-xl p-5 text-left space-y-2">
+    <button onclick="openFind()" class="bg-surface-container border border-outline-variant rounded-xl p-5 text-left space-y-2">
       <span class="material-symbols-outlined text-4xl text-primary">search</span>
       <div class="font-bold text-lg">도서 찾기</div>
       <div class="text-xs text-on-surface-variant">청구기호·제목으로 위치 안내</div>
@@ -81,6 +81,18 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
     <details class="text-[10px] opacity-60"><summary class="cursor-pointer">개발자 정보</summary>
       <span class="font-mono-data">인식 v4 · 검출 v3 · <span id="home-backend">-</span></span></details>
   </footer>
+</div>
+
+<!-- ═══════ 도서 찾기 화면 ═══════ -->
+<div id="view-find" class="view max-w-md mx-auto px-4 py-6 space-y-4">
+  <header class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-primary cursor-pointer" onclick="show('home')">arrow_back</span>
+    <h1 class="text-xl font-bold">도서 찾기</h1>
+  </header>
+  <input id="find-q" type="search" placeholder="제목이나 청구기호를 입력하세요"
+         class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-3 text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:ring-0">
+  <p class="text-xs text-on-surface-variant">최근 스캔에서 위치가 확인된 책 <span id="find-n">-</span>권을 찾을 수 있어요</p>
+  <div id="find-list" class="bg-surface-container border border-outline-variant rounded-xl divide-y divide-outline-variant max-h-[60vh] overflow-y-auto"></div>
 </div>
 
 <!-- ═══════ 스캔 화면 (실시간 하단 결과 시트) ═══════ -->
@@ -324,6 +336,67 @@ document.getElementById('file').onchange = async ev => {
 };
 
 addEventListener('resize', () => { if (lastImg && lastRows) drawBoxes(lastImg, lastRows); });
+
+// ── 도서 찾기: 최근 스캔(데모 2장)에서 위치 확인된 책 검색 → 서가에서 하이라이트 ──
+let findIdx = null;
+async function openFind() {
+  if (!findIdx) {
+    findIdx = [];
+    for (const n of [1, 2]) {
+      const rows = await (await fetch(`demo/demo${n}.json`)).json();
+      for (const r of rows) if (r.call) findIdx.push({ demo: n, call: r.call, title: r.title || '', box: r.box });
+    }
+    findIdx.sort((a, b) => a.call.localeCompare(b.call, 'ko'));
+  }
+  document.getElementById('find-n').textContent = findIdx.length;
+  renderFind('');
+  show('find');
+  document.getElementById('find-q').focus();
+}
+function renderFind(q) {
+  const norm = s => s.replace(/\s/g, '').toLowerCase();
+  const hits = findIdx.filter(b => !q || norm(b.call).includes(norm(q)) || norm(b.title).includes(norm(q)));
+  const el = document.getElementById('find-list'); el.innerHTML = '';
+  for (const b of hits.slice(0, 50)) {
+    const d = document.createElement('div');
+    d.className = 'p-3 flex justify-between items-center cursor-pointer active:bg-surface-variant/40';
+    d.innerHTML = `<div class="min-w-0"><div class="text-sm truncate">${b.title || '(제목 미상)'}</div>
+      <div class="font-mono-data text-xs text-on-surface-variant">${b.call} · ${b.demo === 1 ? '600번대' : '700번대'} 서가</div></div>
+      <span class="material-symbols-outlined text-primary">arrow_forward</span>`;
+    d.onclick = () => locate(b);
+    el.appendChild(d);
+  }
+  if (!hits.length) el.innerHTML = '<div class="p-4 text-sm text-on-surface-variant">검색 결과가 없어요 — 아직 스캔하지 않은 서가일 수 있어요</div>';
+}
+document.getElementById('find-q').oninput = e => renderFind(e.target.value);
+
+async function locate(b) {
+  if (live) toggleLive();
+  show('scan');
+  const img = document.getElementById('photo');
+  img.src = `demo/demo${b.demo}.jpg`;
+  await img.decode();
+  const rows = await (await fetch(`demo/demo${b.demo}.json`)).json();
+  lastImg = img; lastRows = rows;
+  document.getElementById('scan-title').textContent = `"${(b.title || b.call).slice(0, 14)}" 여기 있어요`;
+  // 대상 책만 강조, 나머지는 흐리게
+  const { s, ox, oy } = fitRect(img);
+  const ar = document.getElementById('ar'); ar.innerHTML = '';
+  const [x0, y0, x1, y1] = b.box;
+  const dim = document.createElement('div');
+  dim.style.cssText = 'position:absolute;inset:0;background:rgba(6,14,32,.55)';
+  ar.appendChild(dim);
+  const hl = document.createElement('div');
+  hl.style.cssText = `position:absolute;left:${x0*s+ox}px;top:${y0*s+oy}px;width:${(x1-x0)*s}px;height:${(y1-y0)*s}px;
+    border:3px solid #4be277;border-radius:3px;box-shadow:0 0 0 6px rgba(75,226,119,.25), 0 0 30px rgba(75,226,119,.5);animation:pulse-glow 1.5s infinite`;
+  const pin = document.createElement('div');
+  pin.textContent = '📍 ' + b.call;
+  pin.style.cssText = 'position:absolute;top:-34px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#22c55e;color:#003915;font:700 12px Geist;padding:4px 8px;border-radius:8px';
+  hl.appendChild(pin);
+  ar.appendChild(hl);
+  fillSheet(img, rows);
+  setSheet(false);
+}
 </script>
 </body>
 </html>
