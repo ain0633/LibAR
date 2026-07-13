@@ -91,7 +91,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
   </header>
   <input id="find-q" type="search" placeholder="제목이나 청구기호를 입력하세요"
          class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-3 text-on-surface placeholder:text-on-surface-variant focus:border-primary focus:ring-0">
-  <p class="text-xs text-on-surface-variant">최근 스캔에서 위치가 확인된 책 <span id="find-n">-</span>권을 찾을 수 있어요</p>
+  <p class="text-xs text-on-surface-variant">등록 장서 <span id="find-n">-</span> — 스캔할수록 정확한 위치가 늘어나요</p>
   <div id="find-list" class="bg-surface-container border border-outline-variant rounded-xl divide-y divide-outline-variant max-h-[60vh] overflow-y-auto"></div>
 </div>
 
@@ -341,32 +341,42 @@ addEventListener('resize', () => { if (lastImg && lastRows) drawBoxes(lastImg, l
 let findIdx = null;
 async function openFind() {
   if (!findIdx) {
-    findIdx = [];
+    // 위치 확인된 책 (스캔 실측) — call → 사진·박스
+    const located = new Map();
     for (const n of [1, 2]) {
       const rows = await (await fetch(`demo/demo${n}.json`)).json();
-      for (const r of rows) if (r.call) findIdx.push({ demo: n, call: r.call, title: r.title || '', box: r.box });
+      for (const r of rows) if (r.call && !located.has(r.call)) located.set(r.call, { demo: n, box: r.box });
     }
-    findIdx.sort((a, b) => a.call.localeCompare(b.call, 'ko'));
+    // 전체 장서목록 (1,860권) — 위치 확인 여부 표시
+    const cat = await (await fetch('demo/catalog.json')).json();
+    findIdx = cat.map(c => ({ ...c, loc: located.get(c.call) || null }));
+    findIdx.sort((a, b) => (b.loc ? 1 : 0) - (a.loc ? 1 : 0) || a.call.localeCompare(b.call, 'ko'));
+    findN = { total: findIdx.length, loc: [...located.keys()].length };
   }
-  document.getElementById('find-n').textContent = findIdx.length;
+  document.getElementById('find-n').textContent = `${findN.total}권 (정확한 위치 확인 ${findN.loc}권)`;
   renderFind('');
   show('find');
   document.getElementById('find-q').focus();
 }
+let findN = null;
 function renderFind(q) {
   const norm = s => s.replace(/\s/g, '').toLowerCase();
   const hits = findIdx.filter(b => !q || norm(b.call).includes(norm(q)) || norm(b.title).includes(norm(q)));
   const el = document.getElementById('find-list'); el.innerHTML = '';
-  for (const b of hits.slice(0, 50)) {
+  for (const b of hits.slice(0, 60)) {
     const d = document.createElement('div');
     d.className = 'p-3 flex justify-between items-center cursor-pointer active:bg-surface-variant/40';
     d.innerHTML = `<div class="min-w-0"><div class="text-sm truncate">${b.title || '(제목 미상)'}</div>
-      <div class="font-mono-data text-xs text-on-surface-variant">${b.call} · ${b.demo === 1 ? '600번대' : '700번대'} 서가</div></div>
-      <span class="material-symbols-outlined text-primary">arrow_forward</span>`;
-    d.onclick = () => locate(b);
+      <div class="font-mono-data text-xs text-on-surface-variant">${b.call} · ${b.sec} 서가</div></div>` +
+      (b.loc ? '<span class="shrink-0 text-[11px] bg-primary/20 text-primary rounded px-2 py-1">📍 바로 안내</span>'
+             : '<span class="shrink-0 text-[11px] bg-surface-variant/60 text-on-surface-variant rounded px-2 py-1">구간 안내</span>');
+    d.onclick = () => b.loc ? locate({ ...b, ...b.loc }) : guideSection(b);
     el.appendChild(d);
   }
-  if (!hits.length) el.innerHTML = '<div class="p-4 text-sm text-on-surface-variant">검색 결과가 없어요 — 아직 스캔하지 않은 서가일 수 있어요</div>';
+  if (!hits.length) el.innerHTML = '<div class="p-4 text-sm text-on-surface-variant">이 도서관 장서목록에 없는 책이에요</div>';
+}
+function guideSection(b) {
+  alert(`『${b.title}』\n${b.call}\n\n${b.sec} 서가에 있어요.\n그 서가 앞에서 '스캔 시작'을 누르면 정확한 칸을 짚어드려요.`);
 }
 document.getElementById('find-q').oninput = e => renderFind(e.target.value);
 
