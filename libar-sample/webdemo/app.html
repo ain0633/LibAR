@@ -407,9 +407,7 @@ function renderFind(q) {
   }
   if (!hits.length) el.innerHTML = '<div class="p-4 text-sm text-on-surface-variant">이 도서관 장서목록에 없는 책이에요</div>';
 }
-// 층·자료실 배치 — 현장 확인 후 여기만 고치면 됨 (출처: ydplib 검색, 종합자료실 3층)
-const FLOORS = { "600번대": ["3층", "종합자료실"], "700번대": ["3층", "종합자료실"],
-                 "800번대": ["3층", "종합자료실"], "862-912": ["3층", "종합자료실"] };
+// 층·자료실은 장서 원본의 '자료실명' 필드에서 책마다 직접 읽는다 (예: "3층 종합자료실")
 // ── 대림도서관 층별 배치도 (공식 홈페이지 지도를 LibAR 디자인으로 옮김) ──
 // rooms: [라벨, x, y, w, h, 종류('room'=일반 'space'=부속 'core'=설비)] · icons: [기호, x, y]
 // 3F 등 나머지 층은 홈페이지 캡처 확보 후 같은 형식으로 추가
@@ -425,9 +423,6 @@ const FLOORPLANS = {
     icons: [["EV", 236, 52], ["🚻", 306, 40], ["🪜", 240, 110]] },
   "3F": null, "2F": null, "1F": null, "B1F": null,   // 캡처 대기 — 자리만 예약
 };
-// 구간 → (층, 지도의 방 라벨) : 종합자료실 캡처가 오면 방 라벨을 그 이름으로 교체
-const SEC_ROOM = { "600번대": ["3F", "종합자료실"], "700번대": ["3F", "종합자료실"],
-                   "800번대": ["3F", "종합자료실"], "862-912": ["3F", "종합자료실"] };
 
 function drawFloor(fl, hlRoom) {
   const svg = document.getElementById('g-map');
@@ -465,13 +460,13 @@ function drawFloor(fl, hlRoom) {
 }
 
 function guideSection(b) {
-  const [fl, room] = FLOORS[b.sec] || ["-", "자료실"];
+  const room = b.room || '자료실';                       // 장서 원본의 자료실명 (예: "3층 종합자료실")
+  const fl = (room.match(/(B?\d)층/) || [,'?'])[1] + 'F';
   document.getElementById('g-title').textContent = b.title || '(제목 미상)';
   document.getElementById('g-call').textContent = b.call;
-  document.getElementById('g-floorchip').textContent = `${fl} ${room}`;
+  document.getElementById('g-floorchip').textContent = room;
   document.getElementById('g-sec').textContent = `${b.sec} 서가로 가세요`;
-  const [mapFl, mapRoom] = SEC_ROOM[b.sec] || ["4F", null];
-  drawFloor(FLOORPLANS[mapFl] ? mapFl : "4F", mapRoom);
+  drawFloor(fl, room.replace(/^B?\d층\s*/, ''));         // 해당 층 표시 — 배치도 미확보면 '준비 중' (다른 층 대체 표시 안 함)
   show('guide');
 }
 document.getElementById('find-q').oninput = e => renderFind(e.target.value);
