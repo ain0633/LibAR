@@ -7,7 +7,8 @@
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Geist:wght@500;600&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+<!-- webgpu 포함 번들 필수: 기본 ort.min.js는 webgpu 백엔드가 없어 조용히 WASM 강등됨 (헤드리스 디버깅으로 발견) -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.webgpu.min.js"></script>
 <style>
   @keyframes pulse-glow { 0%{box-shadow:0 0 0 0 rgba(75,226,119,.4)} 70%{box-shadow:0 0 0 10px rgba(75,226,119,0)} 100%{box-shadow:0 0 0 0 rgba(75,226,119,0)} }
   .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
@@ -197,12 +198,18 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   const dy = e.changedTouches[0].clientY - ty0; ty0 = null;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
+let backend = '-';
 (async () => {
-  try {
-    const eps = navigator.gpu ? ['webgpu','wasm'] : ['wasm'];
-    sess = await ort.InferenceSession.create('../call_label_yolo3/best.onnx', { executionProviders: eps });
-    document.getElementById('home-backend').textContent = navigator.gpu ? 'WebGPU' : 'WASM';
-  } catch(e) { document.getElementById('home-backend').textContent = '모델 로드 실패'; }
+  const tries = navigator.gpu ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
+  for (const eps of tries) {
+    try {
+      sess = await ort.InferenceSession.create('../call_label_yolo3/best.onnx', { executionProviders: eps });
+      backend = eps[0] === 'webgpu' ? 'WebGPU' : 'WASM';
+      document.getElementById('home-backend').textContent = backend;
+      return;
+    } catch(e) { console.error('ORT init 실패', eps, e); }
+  }
+  document.getElementById('home-backend').textContent = '모델 로드 실패';
 })();
 
 function dims(el) { return { W: el.videoWidth || el.naturalWidth, H: el.videoHeight || el.naturalHeight }; }
@@ -293,7 +300,7 @@ function renderAll(img, rows, title) {
   setSheet(false);
   const nd = rows.filter(r => r.how === '청구기호').length, nt = rows.filter(r => r.how === '제목복구').length;
   document.getElementById('dev-info').innerHTML =
-    `검출 call_label_yolo3 · ${navigator.gpu ? 'WebGPU' : 'WASM'} · ${lastMs.toFixed(0)}ms · 박스 ${rows.length}<br>` +
+    `검출 call_label_yolo3 · ${backend} · ${lastMs.toFixed(0)}ms · 박스 ${rows.length}<br>` +
     `직독 ${nd} · 제목복구 ${nt} · 인식/대조 korean_lowres_v4 파이프라인 실측`;
 }
 
@@ -302,35 +309,43 @@ let live = false, stream = null;
 async function toggleLive() {
   const cam = document.getElementById('cam'), photo = document.getElementById('photo'),
         btn = document.getElementById('btn-live');
-  if (live) {                                        // 일시정지
+  if (live) {                                        // 일시정지 (동기 경로 — 여기서만 오버레이 정리)
     live = false;
     if (stream) stream.getTracks().forEach(t => t.stop());
     cam.classList.add('hidden'); btn.textContent = '▶ 재개';
+    document.getElementById('ar').innerHTML = '';
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
-    document.getElementById('scan-title').textContent = '카메라 미지원 (HTTPS 또는 localhost 필요)'; return; }
+    document.getElementById('scan-title').textContent = '카메라 미지원 (HTTPS 또는 localhost 필요)';
+    btn.textContent = '▶ 카메라'; return; }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 } } });
-  } catch(e) { document.getElementById('scan-title').textContent = '카메라 권한이 필요해요'; return; }
+  } catch(e) { document.getElementById('scan-title').textContent = '카메라 권한이 필요해요 — 사진 업로드로도 쓸 수 있어요';
+    btn.textContent = '▶ 카메라'; return; }
   cam.srcObject = stream; await cam.play();
   cam.classList.remove('hidden'); photo.removeAttribute('src');
   btn.textContent = '⏸ 일시정지'; live = true;
   setSheet(false);
+  // 라이브 시작: 이전 사진/데모의 시트 잔상 제거
+  for (const id of ['c-ok', 'c-mis']) document.getElementById(id).textContent = '0';
+  for (const id of ['list-mis', 'list-ok', 'list-gray']) document.getElementById(id).innerHTML = '';
+  document.getElementById('sec-mis').classList.add('hidden');
   let n = 0, tSum = 0;
   while (live) {                                     // 직렬 루프: 추론 끝나는 대로 다음 프레임
+    if (!cam.videoWidth) break;                      // 일시정지 직후 죽은 스트림 가드 (0 나누기 방지)
     const rows = await detect(cam);
-    if (!live) break;
+    if (!live) break;                                // 정지·데모 전환 후 늦게 깬 루프는 그리지 않고 종료
     rows.forEach(r => r.live = true);
     drawBoxes(cam, rows);
     n++; tSum += lastMs;
     document.getElementById('scan-title').textContent = `📚 책 ${rows.length}권 보임 — 천천히 움직여주세요`;
     document.getElementById('c-gray').textContent = rows.length;
     document.getElementById('dev-info').innerHTML =
-      `라이브 검출 ${(1000/(tSum/n)).toFixed(1)} FPS · ${lastMs.toFixed(0)}ms/프레임 · ${navigator.gpu ? 'WebGPU' : 'WASM'}`;
+      `라이브 검출 ${(1000/(tSum/n)).toFixed(1)} FPS · ${lastMs.toFixed(0)}ms/프레임 · ${backend}`;
     await new Promise(r => setTimeout(r, 30));       // UI 숨쉴 틈
   }
-  document.getElementById('ar').innerHTML = '';
+  // 주의: 여기서 #ar를 비우면 안 됨 — 데모/사진 전환이 이미 새 박스를 그린 뒤일 수 있음 (레이스)
 }
 
 async function loadDemo(n) {
@@ -344,7 +359,8 @@ async function loadDemo(n) {
 }
 
 document.getElementById('file').onchange = async ev => {
-  const f = ev.target.files[0]; if (!f || !sess) return;
+  const f = ev.target.files[0]; if (!f) return;
+  if (!sess) { document.getElementById('scan-title').textContent = '모델 준비 중… 잠시 후 다시 시도해주세요'; return; }
   if (live) toggleLive();
   const img = document.getElementById('photo');
   img.src = URL.createObjectURL(f);
