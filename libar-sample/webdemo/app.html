@@ -47,7 +47,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
       <div class="text-sm text-on-surface-variant">읽고 싶은 책이 어느 서가, 어느 칸에 있는지 안내해드려요</div>
     </button>
     <!-- (사서) 서가 점검하기 -->
-    <button onclick="show('scan')" class="relative w-full bg-primary-container text-on-primary-container rounded-2xl p-6 text-left space-y-2 shadow-lg" style="animation:pulse-glow 2.5s infinite">
+    <button onclick="enterScan()" class="relative w-full bg-primary-container text-on-primary-container rounded-2xl p-6 text-left space-y-2 shadow-lg" style="animation:pulse-glow 2.5s infinite">
       <span class="absolute top-3 right-4 text-[11px] bg-background/25 rounded-full px-2.5 py-0.5">사서</span>
       <span class="material-symbols-outlined text-5xl">photo_camera</span>
       <div class="font-bold text-2xl">서가 점검하기</div>
@@ -100,7 +100,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
   <div class="bg-primary-container text-on-primary-container rounded-xl p-4 space-y-2" style="animation:pulse-glow 2s infinite">
     <div class="font-bold" id="g-sec">-</div>
     <div class="text-xs opacity-90">서가 앞에서 카메라로 비추면 찾는 책이 어느 칸에 있는지 짚어드려요</div>
-    <button onclick="show('scan')" class="w-full bg-background/20 border border-on-primary-container/30 rounded-lg py-2.5 font-bold flex items-center justify-center gap-2">
+    <button onclick="enterScan()" class="w-full bg-background/20 border border-on-primary-container/30 rounded-lg py-2.5 font-bold flex items-center justify-center gap-2">
       <span class="material-symbols-outlined">photo_camera</span> 서가 스캔 시작
     </button>
   </div>
@@ -121,14 +121,20 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
         <span class="material-symbols-outlined text-primary cursor-pointer" onclick="show('home')" style="pointer-events:auto">arrow_back</span>
         <h1 class="font-bold text-sm" id="scan-title">사진을 선택하세요</h1>
       </div>
-      <div class="flex gap-2 text-xs" style="pointer-events:auto">
-        <button onclick="toggleLive()" id="btn-live" class="bg-primary/25 text-primary border border-primary/50 rounded-lg px-2.5 py-1.5 font-bold">🔴 라이브</button>
-        <label class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5 cursor-pointer">📷<input type="file" accept="image/*" id="file" class="hidden"></label>
-        <button onclick="loadDemo(1)" class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5">데모1</button>
-        <button onclick="loadDemo(2)" class="bg-surface-variant/70 rounded-lg px-2.5 py-1.5">데모2</button>
-      </div>
+      <button onclick="toggleLive()" id="btn-live" style="pointer-events:auto"
+              class="bg-primary/25 text-primary border border-primary/50 rounded-lg px-2.5 py-1.5 font-bold text-xs">⏸ 일시정지</button>
     </div>
   </header>
+
+  <!-- 부가 기능 (시트 위 우하단): 사진 업로드 + 판정 시연 -->
+  <div class="fixed right-3 z-40 flex flex-col items-end gap-1.5" style="bottom:130px; pointer-events:auto">
+    <label class="bg-surface-container/85 backdrop-blur border border-outline-variant rounded-lg px-3 py-2 text-xs font-bold cursor-pointer">
+      🖼 사진 업로드<input type="file" accept="image/*" id="file" class="hidden"></label>
+    <div class="flex gap-1.5 text-[10px]">
+      <button onclick="loadDemo(1)" class="bg-surface-container/70 border border-outline-variant rounded-md px-2 py-1 text-on-surface-variant">판정 시연·광각</button>
+      <button onclick="loadDemo(2)" class="bg-surface-container/70 border border-outline-variant rounded-md px-2 py-1 text-on-surface-variant">판정 시연·각도</button>
+    </div>
+  </div>
 
   <!-- ▼ 실시간 결과 바텀시트 -->
   <div id="sheet" class="fixed bottom-0 left-0 w-full z-50 bg-surface-container-low/95 backdrop-blur-md border-t border-outline-variant rounded-t-2xl"
@@ -177,6 +183,8 @@ let sess = null, lastRows = null, lastImg = null, lastMs = 0, expanded = false;
 
 function show(v) { document.querySelectorAll('.view').forEach(e => e.classList.remove('active'));
   document.getElementById('view-' + v).classList.add('active'); }
+// 서가 점검·길안내에서 진입 시 카메라 자동 시작 (사진 업로드·판정 시연은 부가 기능)
+function enterScan() { show('scan'); if (!live) toggleLive(); }
 
 // 바텀시트 접기/펼치기
 const sheet = document.getElementById('sheet');
@@ -294,10 +302,10 @@ let live = false, stream = null;
 async function toggleLive() {
   const cam = document.getElementById('cam'), photo = document.getElementById('photo'),
         btn = document.getElementById('btn-live');
-  if (live) {                                        // 정지: 마지막 프레임을 사진으로 고정
+  if (live) {                                        // 일시정지
     live = false;
     if (stream) stream.getTracks().forEach(t => t.stop());
-    cam.classList.add('hidden'); btn.textContent = '🔴 라이브';
+    cam.classList.add('hidden'); btn.textContent = '▶ 재개';
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -307,7 +315,7 @@ async function toggleLive() {
   } catch(e) { document.getElementById('scan-title').textContent = '카메라 권한이 필요해요'; return; }
   cam.srcObject = stream; await cam.play();
   cam.classList.remove('hidden'); photo.removeAttribute('src');
-  btn.textContent = '⏸ 정지'; live = true;
+  btn.textContent = '⏸ 일시정지'; live = true;
   setSheet(false);
   let n = 0, tSum = 0;
   while (live) {                                     // 직렬 루프: 추론 끝나는 대로 다음 프레임
