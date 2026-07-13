@@ -49,7 +49,13 @@ for res_dir, photo_dir, restore in SOURCES:
         if not photo.exists() or str(photo) in seen: continue
         seen.add(str(photo))
         rows = json.load(open(rf, encoding="utf-8"))
-        boxes = [r["box"] for r in rows]
+        # v3: 클러스터 기둥(높이/폭 3.4~4.6)이 아닌 라벨 부위만 — 하단 40%.
+        # v2가 책등 박스를 배운 탓에 걷기 스트립이 410px로 두꺼워져 ×3 업스케일 미발동(판독률
+        # 89% vs 휴리스틱 95%)이 근본 원인. 40%는 사진·동영상 렌더 육안 검증(흰 스티커+색 밴드).
+        boxes = []
+        for r in rows:
+            x0, y0, x1, y1 = r["box"]
+            boxes.append([x0, y1 - (y1-y0)*0.40, x1, y1])
         if len(boxes) < 5: continue
         items.append((photo, boxes))
 
