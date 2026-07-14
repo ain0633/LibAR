@@ -72,6 +72,34 @@ def det_lines(img):
 def nfc(s): return unicodedata.normalize("NFC", str(s))
 def sim(a, b): return difflib.SequenceMatcher(None, a, b).ratio()
 
+# ── 소급 매칭: call 없는 크롭(수집 모드·카탈로그 밖 서가)에 카탈로그로 GT 부여 ──
+# 보수 게이트: 분류번호(sim≥0.8)와 저자기호(sim≥0.75, 2위와 0.05 이상 격차)가
+# 같은 책에서 동시에 맞아야만 인정 — 오답 GT가 학습을 오염시키는 것보다 버리는 게 낫다.
+import csv
+CLS_AUTH = {}                                          # 분류번호 → {저자기호,...}
+cat_csv = HERE/"catalog_full.csv"
+if cat_csv.exists():
+    for row in csv.DictReader(io.open(cat_csv, encoding="utf-8-sig")):
+        parts = nfc(row["call_number"]).split("-")
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            CLS_AUTH.setdefault(parts[0], set()).add(parts[1])
+CLS_LIST = sorted(CLS_AUTH)
+
+def retro_call(reads):
+    """판독 줄들 → (분류번호, 저자기호) or None."""
+    best = None
+    for r1 in reads:
+        for cls in difflib.get_close_matches(r1, CLS_LIST, n=2, cutoff=0.8):
+            for r2 in reads:
+                if r2 is r1: continue
+                scored = sorted(((sim(r2, a), a) for a in CLS_AUTH[cls]), reverse=True)
+                if not scored or scored[0][0] < 0.75: continue
+                if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05: continue
+                # 완전일치 분류번호 가산: 005.133 판독이 저자 점수 차이로 005.13에 뺏기는 것 방지
+                cand = (sim(r1, cls) + (0.5 if r1 == cls else 0) + scored[0][0], cls, scored[0][1])
+                if best is None or cand > best: best = cand
+    return (best[1], best[2]) if best else None
+
 meta_path = OUT/"meta_field.txt"
 have = set()
 if meta_path.exists():
@@ -81,7 +109,7 @@ meta = io.open(meta_path, "a", encoding="utf-8")
 
 import hashlib
 seen_zip, seen_crop = set(), set()
-n_zip = n_crop = n_pair = n_dup = n_cdup = 0
+n_zip = n_crop = n_pair = n_dup = n_cdup = n_retro = 0
 for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
     h = hashlib.md5(open(zp, "rb").read()).hexdigest()
     if h in seen_zip:                                  # 재전송 중복 zip (전송 재시도 흔적)
@@ -92,22 +120,26 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
     with zipfile.ZipFile(zp) as z:
         man = json.loads(z.read("manifest.json").decode("utf-8"))
         for c in man.get("crops", []):
-            call = c.get("call")
-            if not call: continue                      # 정답 확정 크롭만
             raw = z.read(c["file"])
             ch = hashlib.md5(raw).hexdigest()          # 크롭 내용 단위 중복 제거
             if ch in seen_crop:                        # (재전송 zip은 메타데이터만 달라 zip md5로 못 잡음)
                 n_cdup += 1; continue
             seen_crop.add(ch)
-            n_crop += 1
             img = cv2.imdecode(np.frombuffer(raw, np.uint8), 1)
             if img is None: continue
             big = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_LANCZOS4)
-            parts = nfc(call).split("-")
-            cands = [p for p in parts[:2] if len(p) >= 2]  # 분류번호·저자기호 (권차 줄 제외)
-            for li, (y0, line) in enumerate(det_lines(big)):
-                read = rec_line(line)
-                if len(read) < 2: continue
+            lines = [(li, line, rec_line(line)) for li, (y0, line) in enumerate(det_lines(big))]
+            lines = [(li, line, read) for li, line, read in lines if len(read) >= 2]
+            call = c.get("call")
+            if call:                                   # 앱이 정답 확정한 크롭
+                parts = nfc(call).split("-")
+                cands = [p for p in parts[:2] if len(p) >= 2]  # 분류번호·저자기호 (권차 줄 제외)
+            else:                                      # 수집 모드 크롭 → 소급 매칭 (보수 게이트)
+                rc = retro_call([read for _, _, read in lines])
+                if rc is None: continue
+                cands = [p for p in rc if len(p) >= 2]; n_retro += 1
+            n_crop += 1
+            for li, line, read in lines:
                 best = max(cands, key=lambda p: sim(read, p), default=None)
                 if best is None or sim(read, best) < 0.5: continue
                 name = f"crops/{ztag}_{Path(c['file']).stem}_{li}_{re.sub(r'[^0-9A-Za-z가-힣.]', '', best)}.jpg"
@@ -116,5 +148,5 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
                 meta.write(f"{name}\t{best}\tfield\n")
                 have.add(name); n_pair += 1
 meta.close()
-print(f"[변환] zip {n_zip}개(zip중복 {n_dup}·크롭중복 {n_cdup} 제외) · 고유 정답 크롭 {n_crop}개 → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
+print(f"[변환] zip {n_zip}개(zip중복 {n_dup}·크롭중복 {n_cdup} 제외) · 정답 크롭 {n_crop}개(소급 {n_retro}) → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
 print(f"[출력] {OUT}/meta_field.txt — rec 파인튜닝 v5 학습 시 meta_train에 병합")
