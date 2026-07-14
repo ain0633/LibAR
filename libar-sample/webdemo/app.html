@@ -210,11 +210,13 @@ function mkCanvas(w, h) {                              // OffscreenCanvas 미지
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
   const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
+let yoloBuf = null;                        // 모델 버퍼 보관 — GPU 디바이스 소실 시 오프라인 재구축용
 async function loadYolo() {
+  yoloBuf ??= new Uint8Array(await (await fetch('../call_label_yolo3/best.onnx')).arrayBuffer());
   const tries = (navigator.gpu && !forceWasm) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
   for (const eps of tries) {
     try {
-      sess = await ort.InferenceSession.create('../call_label_yolo3/best.onnx', { executionProviders: eps });
+      sess = await ort.InferenceSession.create(yoloBuf, { executionProviders: eps });
       backend = eps[0] === 'webgpu' ? 'WebGPU' : 'WASM';
       document.getElementById('home-backend').textContent = backend;
       return;
@@ -224,10 +226,12 @@ async function loadYolo() {
 }
 const sessReady = loadYolo();              // 프로미스 노출 — 자동 테스트가 폴링 대신 await
 let rebuilt = false;
-async function rebuildWasm() {             // WebGPU 실행 실패 → 전 세션 WASM 재구축 (1회)
-  if (rebuilt) return false;
+async function rebuildWasm() {
+  // WebGPU 실행 실패(초기 비호환 or 저전력·백그라운드로 인한 device loss) → 전 세션 WASM 재구축.
+  // 버퍼가 메모리에 있어 네트워크 없이 즉시 — 5G·저배터리 현장에서도 안전 (현장 리포트 07-14 2차)
+  if (rebuilt) return backend === 'WASM' && !!sess;
   rebuilt = true; forceWasm = true;
-  sess = null; await loadYolo();           // 모델 재요청은 HTTP 캐시가 받아줌
+  sess = null; await loadYolo();
   recSess = detSess = null; recReady = null;
   await ensureRec();
   return !!sess;
@@ -235,6 +239,7 @@ async function rebuildWasm() {             // WebGPU 실행 실패 → 전 세�
 
 // ── 온디바이스 인식 모델 (rec_v4 fp16, 48MB) — 필요 시점에 내려받아 세션 생성 ──
 let recSess = null, detSess = null, recChars = null, recIdx = null, recReady = null, recBackend = '-';
+let recBuf = null, detBuf = null;                       // 재구축용 버퍼 보관
 let recMsgCb = null, lastRecMs = 0, lastRecN = 0;
 let _catRaw = null;
 async function loadCatalogRaw() { return _catRaw ??= await (await fetch('demo/catalog.json')).json(); }
@@ -247,26 +252,29 @@ async function ensureRec(onMsg) {
       const [chars, cat] = await Promise.all([
         (await fetch('rec_charset.json')).json(), loadCatalogRaw()]);
       recChars = chars; recIdx = prepCatalog(cat);
-      const resp = await fetch('rec_v4_fp16.onnx');     // 직접 fetch — 48MB 다운로드 진행률 표시
-      if (!resp.ok) throw new Error('rec 모델 ' + resp.status);
-      const total = +resp.headers.get('Content-Length') || 0;
-      let buf;
-      if (resp.body && total) {
-        const rd = resp.body.getReader(), chunks = []; let got = 0;
-        while (true) { const { done, value } = await rd.read(); if (done) break;
-          chunks.push(value); got += value.length;
-          say(`인식 모델 내려받는 중… ${(got/1048576).toFixed(0)}/${(total/1048576).toFixed(0)}MB`); }
-        buf = new Uint8Array(got); let o = 0;
-        for (const ch of chunks) { buf.set(ch, o); o += ch.length; }
-      } else buf = new Uint8Array(await resp.arrayBuffer());
-      const dresp = await fetch('det_mobile.onnx');     // 텍스트 줄 검출 (DB, 4.5MB)
-      if (!dresp.ok) throw new Error('det 모델 ' + dresp.status);
-      const dbuf = new Uint8Array(await dresp.arrayBuffer());
+      if (!recBuf) {
+        const resp = await fetch('rec_v4_fp16.onnx');   // 직접 fetch — 48MB 다운로드 진행률 표시
+        if (!resp.ok) throw new Error('rec 모델 ' + resp.status);
+        const total = +resp.headers.get('Content-Length') || 0;
+        if (resp.body && total) {
+          const rd = resp.body.getReader(), chunks = []; let got = 0;
+          while (true) { const { done, value } = await rd.read(); if (done) break;
+            chunks.push(value); got += value.length;
+            say(`인식 모델 내려받는 중… ${(got/1048576).toFixed(0)}/${(total/1048576).toFixed(0)}MB`); }
+          recBuf = new Uint8Array(got); let o = 0;
+          for (const ch of chunks) { recBuf.set(ch, o); o += ch.length; }
+        } else recBuf = new Uint8Array(await resp.arrayBuffer());
+      }
+      if (!detBuf) {
+        const dresp = await fetch('det_mobile.onnx');   // 텍스트 줄 검출 (DB, 4.5MB)
+        if (!dresp.ok) throw new Error('det 모델 ' + dresp.status);
+        detBuf = new Uint8Array(await dresp.arrayBuffer());
+      }
       const tries = (navigator.gpu && !forceWasm) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
       for (const eps of tries) {
         try {  // fp16 모델은 'all' 최적화가 LayerNorm 퓨전 버그로 초기화 실패 → basic (데스크톱 ORT 실측)
-          recSess = await ort.InferenceSession.create(buf, { executionProviders: eps, graphOptimizationLevel: 'basic' });
-          detSess = await ort.InferenceSession.create(dbuf, { executionProviders: eps });
+          recSess = await ort.InferenceSession.create(recBuf, { executionProviders: eps, graphOptimizationLevel: 'basic' });
+          detSess = await ort.InferenceSession.create(detBuf, { executionProviders: eps });
           recBackend = eps[0] === 'webgpu' ? 'WebGPU' : 'WASM';
           return true;
         } catch(e) { console.error('rec init 실패', eps, e); }
