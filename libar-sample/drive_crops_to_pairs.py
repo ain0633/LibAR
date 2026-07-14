@@ -79,8 +79,14 @@ if meta_path.exists():
         have.add(ln.split("\t")[0])
 meta = io.open(meta_path, "a", encoding="utf-8")
 
-n_zip = n_crop = n_pair = 0
+import hashlib
+seen_zip = set()
+n_zip = n_crop = n_pair = n_dup = 0
 for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
+    h = hashlib.md5(open(zp, "rb").read()).hexdigest()
+    if h in seen_zip:                                  # 재전송 중복 zip (전송 재시도 흔적)
+        n_dup += 1; continue
+    seen_zip.add(h)
     n_zip += 1
     ztag = Path(zp).stem.replace("libar_crops_", "")
     with zipfile.ZipFile(zp) as z:
@@ -105,5 +111,5 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
                 meta.write(f"{name}\t{best}\tfield\n")
                 have.add(name); n_pair += 1
 meta.close()
-print(f"[변환] zip {n_zip}개 · 정답 크롭 {n_crop}개 → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
+print(f"[변환] zip {n_zip}개(중복 제외 {n_dup}) · 정답 크롭 {n_crop}개 → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
 print(f"[출력] {OUT}/meta_field.txt — rec 파인튜닝 v5 학습 시 meta_train에 병합")
