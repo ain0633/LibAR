@@ -203,9 +203,15 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
 let backend = '-';
-const noGpu = location.hash.includes('wasm');          // #...wasm — WASM 폴백 강제 (테스트용)
-const sessReady = (async () => {           // 프로미스 노출 — 자동 테스트가 폴링 대신 await
-  const tries = (navigator.gpu && !noGpu) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
+let forceWasm = location.hash.includes('wasm');        // #...wasm 해시 또는 런타임 실패 시 강제
+// 일부 기기(iOS Safari 등)는 WebGPU 세션 생성은 되지만 실제 추론에서 실패 — 실행 실패 시
+// rebuildWasm()으로 전 세션을 WASM으로 재구축하고 한 번 재시도한다 (현장 리포트 07-14).
+function mkCanvas(w, h) {                              // OffscreenCanvas 미지원 기기 폴백
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+}
+async function loadYolo() {
+  const tries = (navigator.gpu && !forceWasm) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
   for (const eps of tries) {
     try {
       sess = await ort.InferenceSession.create('../call_label_yolo3/best.onnx', { executionProviders: eps });
@@ -215,7 +221,17 @@ const sessReady = (async () => {           // 프로미스 노출 — 자동 테
     } catch(e) { console.error('ORT init 실패', eps, e); }
   }
   document.getElementById('home-backend').textContent = '모델 로드 실패';
-})();
+}
+const sessReady = loadYolo();              // 프로미스 노출 — 자동 테스트가 폴링 대신 await
+let rebuilt = false;
+async function rebuildWasm() {             // WebGPU 실행 실패 → 전 세션 WASM 재구축 (1회)
+  if (rebuilt) return false;
+  rebuilt = true; forceWasm = true;
+  sess = null; await loadYolo();           // 모델 재요청은 HTTP 캐시가 받아줌
+  recSess = detSess = null; recReady = null;
+  await ensureRec();
+  return !!sess;
+}
 
 // ── 온디바이스 인식 모델 (rec_v4 fp16, 48MB) — 필요 시점에 내려받아 세션 생성 ──
 let recSess = null, detSess = null, recChars = null, recIdx = null, recReady = null, recBackend = '-';
@@ -246,7 +262,7 @@ async function ensureRec(onMsg) {
       const dresp = await fetch('det_mobile.onnx');     // 텍스트 줄 검출 (DB, 4.5MB)
       if (!dresp.ok) throw new Error('det 모델 ' + dresp.status);
       const dbuf = new Uint8Array(await dresp.arrayBuffer());
-      const tries = (navigator.gpu && !noGpu) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
+      const tries = (navigator.gpu && !forceWasm) ? [['webgpu','wasm'], ['wasm']] : [['wasm']];
       for (const eps of tries) {
         try {  // fp16 모델은 'all' 최적화가 LayerNorm 퓨전 버그로 초기화 실패 → basic (데스크톱 ORT 실측)
           recSess = await ort.InferenceSession.create(buf, { executionProviders: eps, graphOptimizationLevel: 'basic' });
@@ -265,7 +281,7 @@ async function ensureRec(onMsg) {
 //    → det(DB)로 텍스트 줄 검출 → rec → 토큰 x배정 + 클러스터 채널 → 1,860권 대조 → LIS 판정 ──
 async function recLine(cnv, sx, sy, sw, sh) {
   const tw = Math.min(320, Math.max(8, Math.ceil(48 * sw / sh)));
-  const rc = new OffscreenCanvas(320, 48), rg = rc.getContext('2d', { willReadFrequently: true });
+  const rc = mkCanvas(320, 48), rg = rc.getContext('2d', { willReadFrequently: true });
   rg.drawImage(cnv, sx, sy, sw, sh, 0, 0, tw, 48);
   const px = rg.getImageData(0, 0, 320, 48).data;
   const x = new Float32Array(3 * 48 * 320);            // 우측 패딩 = 0 (정규화 공간, 파이썬 전처리와 동일)
@@ -285,7 +301,7 @@ async function detRecPiece(cnv) {                      // 피스 로컬 좌표 �
   const w = cnv.width, h = cnv.height;
   const sc = Math.min(1, 960 / Math.max(w, h));
   const nw = Math.max(32, Math.round(w * sc / 32) * 32), nh = Math.max(32, Math.round(h * sc / 32) * 32);
-  const dc = new OffscreenCanvas(nw, nh), dg = dc.getContext('2d', { willReadFrequently: true });
+  const dc = mkCanvas(nw, nh), dg = dc.getContext('2d', { willReadFrequently: true });
   dg.drawImage(cnv, 0, 0, w, h, 0, 0, nw, nh);
   const px = dg.getImageData(0, 0, nw, nh).data;
   const n = nh * nw, x = new Float32Array(3 * n);
@@ -312,14 +328,14 @@ async function stripTokens(img, sy0, sy1, W, onMsg, tag) {
   const h = sy1 - sy0;
   const f = h < 320 ? Math.min(3, 960 / h) : Math.min(1, 1000 / h);   // 저해상 ×3 업스케일 (검증본)
   const sw = Math.round(W * f), sh = Math.round(h * f);
-  const strip = new OffscreenCanvas(sw, sh);
+  const strip = mkCanvas(sw, sh);
   strip.getContext('2d').drawImage(img, 0, sy0, W, h, 0, 0, sw, sh);
   const chunk = 1280, ov = f > 1 ? Math.round(120 * f) : 120;         // 겹침은 원본 기준 유지
   const toks = [];
   if (Math.max(sw, sh) <= chunk + ov) toks.push(...await detRecPiece(strip));
   else for (let x = 0; x < sw; x += chunk) {
     const pw = Math.min(sw, x + chunk + ov) - x;
-    const piece = new OffscreenCanvas(pw, sh);
+    const piece = mkCanvas(pw, sh);
     piece.getContext('2d').drawImage(strip, x, 0, pw, sh, 0, 0, pw, sh);
     for (const t of await detRecPiece(piece)) {
       if (x > 0 && t.x < ov * 0.5) continue;           // 청크 경계 중복 제거
@@ -356,18 +372,37 @@ async function recognizeAll(img, rows, onMsg) {
 
 // 공통 스캔 경로: 검출 → (진행 표시) → 인식·대조·판정 → 최종 렌더
 let scanning = false;                                  // 판독 20~30초 — 중복 실행 시 결과 뒤섞임 방지
+async function scanOnce(img, title) {
+  const rows = await detect(img);
+  renderAll(img, rows, `${title} — 청구기호를 읽는 중…`, false);
+  const okRec = await recognizeAll(img, rows, m => document.getElementById('scan-title').textContent = m);
+  const nOk = rows.filter(r => r.call && !r.mis).length, nMis = rows.filter(r => r.mis).length;
+  renderAll(img, rows, okRec ? `${title} — ${nOk}권 확인${nMis ? ` · ${nMis}권 의심` : ''}`
+                             : `${title} — 책 ${rows.length}권 (인식 모델 로드 실패)`);
+}
 async function scanImage(img, title) {
   if (scanning) { document.getElementById('scan-title').textContent = '판독 중이에요 — 잠시만요'; return; }
   scanning = true;
   try {
-    const rows = await detect(img);
-    renderAll(img, rows, `${title} — 청구기호를 읽는 중…`, false);
-    const okRec = await recognizeAll(img, rows, m => document.getElementById('scan-title').textContent = m);
-    const nOk = rows.filter(r => r.call && !r.mis).length, nMis = rows.filter(r => r.mis).length;
-    renderAll(img, rows, okRec ? `${title} — ${nOk}권 확인${nMis ? ` · ${nMis}권 의심` : ''}`
-                               : `${title} — 책 ${rows.length}권 (인식 모델 로드 실패)`);
+    try { await scanOnce(img, title); }
+    catch(e) {                                         // 일부 기기: WebGPU 세션은 생기지만 추론에서 실패
+      console.error('스캔 실패', e);
+      if ((backend === 'WebGPU' || recBackend === 'WebGPU') && !rebuilt) {
+        document.getElementById('scan-title').textContent = '호환 모드로 전환해 다시 시도 중…';
+        if (await rebuildWasm()) { await scanOnce(img, title); return; }
+      }
+      document.getElementById('scan-title').textContent =
+        `판독에 실패했어요 — 새로고침 후 다시 시도해주세요 (${String(e).slice(0, 80)})`;
+    }
   } finally { scanning = false; }
 }
+// 조용한 멈춤 방지: 처리되지 않은 오류도 화면에 보이게 (현장 리포트가 곧 진단서가 되도록)
+addEventListener('unhandledrejection', e => {
+  console.error(e.reason);
+  const t = document.getElementById('scan-title');
+  if (t && /살펴보는 중|읽는 중|준비 중/.test(t.textContent))
+    t.textContent = `오류가 발생했어요 (${String(e.reason).slice(0, 80)})`;
+});
 
 function dims(el) { return { W: el.videoWidth || el.naturalWidth, H: el.videoHeight || el.naturalHeight }; }
 function fitRect(el) {
@@ -435,7 +470,7 @@ function fillSheet(img, rows) {
 
 async function detect(img) {
   const { W, H } = dims(img); const r = SZ / Math.max(W, H);
-  const off = new OffscreenCanvas(SZ, SZ), ox = off.getContext('2d');
+  const off = mkCanvas(SZ, SZ), ox = off.getContext('2d');
   ox.fillStyle = 'rgb(114,114,114)'; ox.fillRect(0, 0, SZ, SZ);
   ox.drawImage(img, 0, 0, W * r, H * r);
   const px = ox.getImageData(0, 0, SZ, SZ).data;
@@ -504,7 +539,14 @@ async function toggleLive(analyze = true) {
   let n = 0, tSum = 0;
   while (live) {                                     // 직렬 루프: 추론 끝나는 대로 다음 프레임
     if (!cam.videoWidth) break;                      // 일시정지 직후 죽은 스트림 가드 (0 나누기 방지)
-    const rows = await detect(cam);
+    let rows;
+    try { rows = await detect(cam); }
+    catch(e) {                                       // WebGPU 추론 실패 기기 → WASM 재구축 후 계속
+      console.error('라이브 검출 실패', e);
+      if (backend === 'WebGPU' && !rebuilt && await rebuildWasm()) continue;
+      document.getElementById('scan-title').textContent = `검출 오류 (${String(e).slice(0, 60)})`;
+      break;
+    }
     if (!live) break;                                // 정지·데모 전환 후 늦게 깬 루프는 그리지 않고 종료
     rows.forEach(r => r.live = true);
     drawBoxes(cam, rows);
