@@ -27,8 +27,16 @@ JAMO_FIX = {"0": "ㅇ", "O": "ㅇ", "o": "ㅇ", "Q": "ㅇ", "으": "ㅇ", "이":
             "프": "ㅍ", "표": "ㅍ", "드": "ㄷ", "그": "ㄱ", "느": "ㄴ", "르": "ㄹ", "므": "ㅁ",
             "브": "ㅂ", "스": "ㅅ", "즈": "ㅈ", "츠": "ㅊ", "크": "ㅋ", "트": "ㅌ", "흐": "ㅎ"}
 
-def match(txt):
-    t = nn(txt)
+def _vol_pick(hits, txt):
+    mv = re.search(r"[vV]\.?(\d+)", txt)
+    if mv:
+        vhits = [c for c in hits if re.match(r"^[vV]?\.?0*%s$" % mv.group(1), c["call"].split("-")[-1])]
+        if len(vhits) == 1: return vhits[0]
+    if len({c["call"] for c in hits}) == 1: return hits[0]
+    return None
+
+def match(txt):   # 권차 수술(07-14) 반영 — daelim_yolo_pipeline.py와 동일해야 함
+    t = nn(re.sub(r"[vV]\.?\d+", " ", txt))
     m = None
     for m2 in re.finditer(r"(\d{3}(?:\.\d+)?)([가-힣][0-9]{1,3}[가-힣ㄱ-ㅎ0Oo]?)", t):
         if m2.group(1) in by_cls: m = m2; break
@@ -41,18 +49,22 @@ def match(txt):
             vs = {a} | ({a[:-1]+JAMO_FIX[a[-1]]} if a[-1] in JAMO_FIX else set())
             hits = [c for c in items if c["author"] in vs]
             if len(hits) == 1 and len(a) >= 4: best = hits[0]
+            elif len(hits) > 1 and len(a) >= 4:
+                p = _vol_pick(hits, txt)
+                if p: best = p
         return (best, 0.9) if best else (None, 0.0)
     variants = {author}
     if author[-1] in JAMO_FIX: variants.add(author[:-1] + JAMO_FIX[author[-1]])
     hits = [c for c in cands if c["author"] in variants]
     if len(hits) > 1:
-        mv = re.search(r"[vV]\.?(\d+)", txt)
-        if mv:
-            vhits = [c for c in hits if re.match(r"^[vV]?\.?0*%s$" % mv.group(1), c["call"].split("-")[-1])]
-            if len(vhits) == 1: return vhits[0], 1.0
-        if len({c["call"] for c in hits}) == 1: return hits[0], 1.0
-        return None, 1.0
+        p = _vol_pick(hits, txt)
+        return (p, 1.0) if p else (None, 1.0)
     if len(hits) == 1: return hits[0], 1.0
+    h3 = [c for c in cands if len(c["author"]) == len(author) and c["author"][1:] == author[1:]
+          and c["author"][:1] != author[:1]]
+    if len({c["author"] for c in h3}) == 1:
+        p = _vol_pick(h3, txt) if len(h3) > 1 else h3[0]
+        if p: return p, 0.95
     def digit_ok(c):
         da, dc = re.sub(r"\D", "", author), re.sub(r"\D", "", c["author"])
         return not (len(da) == len(dc) and da != dc)
