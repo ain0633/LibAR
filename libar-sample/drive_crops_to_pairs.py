@@ -80,8 +80,8 @@ if meta_path.exists():
 meta = io.open(meta_path, "a", encoding="utf-8")
 
 import hashlib
-seen_zip = set()
-n_zip = n_crop = n_pair = n_dup = 0
+seen_zip, seen_crop = set(), set()
+n_zip = n_crop = n_pair = n_dup = n_cdup = 0
 for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
     h = hashlib.md5(open(zp, "rb").read()).hexdigest()
     if h in seen_zip:                                  # 재전송 중복 zip (전송 재시도 흔적)
@@ -94,8 +94,13 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
         for c in man.get("crops", []):
             call = c.get("call")
             if not call: continue                      # 정답 확정 크롭만
+            raw = z.read(c["file"])
+            ch = hashlib.md5(raw).hexdigest()          # 크롭 내용 단위 중복 제거
+            if ch in seen_crop:                        # (재전송 zip은 메타데이터만 달라 zip md5로 못 잡음)
+                n_cdup += 1; continue
+            seen_crop.add(ch)
             n_crop += 1
-            img = cv2.imdecode(np.frombuffer(z.read(c["file"]), np.uint8), 1)
+            img = cv2.imdecode(np.frombuffer(raw, np.uint8), 1)
             if img is None: continue
             big = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_LANCZOS4)
             parts = nfc(call).split("-")
@@ -111,5 +116,5 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
                 meta.write(f"{name}\t{best}\tfield\n")
                 have.add(name); n_pair += 1
 meta.close()
-print(f"[변환] zip {n_zip}개(중복 제외 {n_dup}) · 정답 크롭 {n_crop}개 → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
+print(f"[변환] zip {n_zip}개(zip중복 {n_dup}·크롭중복 {n_cdup} 제외) · 고유 정답 크롭 {n_crop}개 → 학습쌍 {n_pair}줄 (GT=카탈로그 참값)")
 print(f"[출력] {OUT}/meta_field.txt — rec 파인튜닝 v5 학습 시 meta_train에 병합")
