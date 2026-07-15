@@ -119,6 +119,8 @@ for zp in sorted(glob.glob(str(INBOX/"libar_crops_*.zip"))):
     ztag = Path(zp).stem.replace("libar_crops_", "")
     with zipfile.ZipFile(zp) as z:
         man = json.loads(z.read("manifest.json").decode("utf-8"))
+        if "Windows" in man.get("device", ""):         # 개발 PC 헤드리스 테스트 업로드 = 데모 사진(평가용) — 학습 오염 차단
+            n_zip -= 1; continue
         for c in man.get("crops", []):
             raw = z.read(c["file"])
             ch = hashlib.md5(raw).hexdigest()          # 크롭 내용 단위 중복 제거
