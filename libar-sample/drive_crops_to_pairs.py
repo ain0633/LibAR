@@ -73,8 +73,10 @@ def nfc(s): return unicodedata.normalize("NFC", str(s))
 def sim(a, b): return difflib.SequenceMatcher(None, a, b).ratio()
 
 # ── 소급 매칭: call 없는 크롭(수집 모드·카탈로그 밖 서가)에 카탈로그로 GT 부여 ──
-# 보수 게이트: 분류번호(sim≥0.8)와 저자기호(sim≥0.75, 2위와 0.05 이상 격차)가
-# 같은 책에서 동시에 맞아야만 인정 — 오답 GT가 학습을 오염시키는 것보다 버리는 게 낫다.
+# v6 강화 게이트 (v5 기각 사후: 소급 GT ~10% 오염이 low 퇴화의 주범):
+#   ①분류번호 완전일치 필수(유사 0.8 폐지) ②저자 2위 격차 0.05→0.1
+#   ③근접 분류쌍 다의성 스킵 — 005.13/005.133처럼 접두 관계 분류가 카탈로그에 공존하고
+#     그쪽에도 비슷한 저자가 있으면 그 크롭은 버린다. 양보다 순도.
 import csv
 CLS_AUTH = {}                                          # 분류번호 → {저자기호,...}
 cat_csv = HERE/"catalog_full.csv"
@@ -85,19 +87,32 @@ if cat_csv.exists():
             CLS_AUTH.setdefault(parts[0], set()).add(parts[1])
 CLS_LIST = sorted(CLS_AUTH)
 
+import bisect
+def near_cls(cls):
+    """카탈로그에서 cls와 접두 관계인 분류번호들 (005.13 ↔ 005.133)."""
+    out = []
+    i = bisect.bisect_right(CLS_LIST, cls)
+    while i < len(CLS_LIST) and CLS_LIST[i].startswith(cls):
+        out.append(CLS_LIST[i]); i += 1
+    for k in range(3, len(cls)):
+        if cls[:k] in CLS_AUTH: out.append(cls[:k])
+    return out
+
 def retro_call(reads):
     """판독 줄들 → (분류번호, 저자기호) or None."""
     best = None
     for r1 in reads:
-        for cls in difflib.get_close_matches(r1, CLS_LIST, n=2, cutoff=0.8):
-            for r2 in reads:
-                if r2 is r1: continue
-                scored = sorted(((sim(r2, a), a) for a in CLS_AUTH[cls]), reverse=True)
-                if not scored or scored[0][0] < 0.75: continue
-                if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05: continue
-                # 완전일치 분류번호 가산: 005.133 판독이 저자 점수 차이로 005.13에 뺏기는 것 방지
-                cand = (sim(r1, cls) + (0.5 if r1 == cls else 0) + scored[0][0], cls, scored[0][1])
-                if best is None or cand > best: best = cand
+        if r1 not in CLS_AUTH: continue                # ①완전일치 필수
+        cls = r1
+        for r2 in reads:
+            if r2 is r1: continue
+            scored = sorted(((sim(r2, a), a) for a in CLS_AUTH[cls]), reverse=True)
+            if not scored or scored[0][0] < 0.75: continue
+            if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.1: continue    # ②격차 0.1
+            if any(max((sim(r2, a2) for a2 in CLS_AUTH[c2]), default=0) >= 0.7
+                   for c2 in near_cls(cls)): continue  # ③접두 이웃에도 비슷한 저자 = 다의성
+            cand = (1 + scored[0][0], cls, scored[0][1])
+            if best is None or cand > best: best = cand
     return (best[1], best[2]) if best else None
 
 meta_path = OUT/"meta_field.txt"
