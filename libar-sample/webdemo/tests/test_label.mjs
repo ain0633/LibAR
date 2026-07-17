@@ -43,9 +43,16 @@ const out = await page.evaluate(async () => {
            withReads, directBtn, volHit, nearHit, coexist,
            id: meta.labels[0].id, call: meta.labels[0].call, nCands, nHits, total: items.length };
 });
+// 분담 시작점: 새 기기에서 #s=300 → 300번부터 (기존 진행 기기는 저장 위치 우선)
+const p2 = await browser.newPage();
+await p2.evaluateOnNewDocument(() => localStorage.clear());     // 새 기기 조건 (저장 위치 우선 규칙과 분리)
+await p2.goto('http://localhost:8791/webdemo/label.html#s=300', { waitUntil: 'load', timeout: 60000 });
+await p2.waitForFunction(() => typeof items !== 'undefined' && items.length > 0, { timeout: 30000 });
+const startPos = await p2.evaluate(() => pos);
 await browser.close();
 
 assert(!out.err, out.err);
+assert(startPos === 300, `분담 시작점 실패: pos ${startPos} ≠ 300`);
 assert(out.name.startsWith('libar_labels_'), `zip 이름 규칙 위반: ${out.name}`);
 assert(out.n === 1 && out.skipped === 1 && out.notlabels === 1,
        `답변/스킵/라벨아님 분리 실패: ${out.n}/${out.skipped}/${out.notlabels}`);
