@@ -60,14 +60,21 @@ def det_lines(img):
     return sorted(out, key=lambda t: t[0])
 
 # 1) 라벨 수집 (최신 zip 우선 — 같은 id 재답변은 나중 것으로 덮음)
-answers = {}
+answers, notlabels = {}, set()
 zips = sorted(glob.glob(str(HERE/"수집조각/libar_labels_*.zip")))
 for zp in zips:
     with zipfile.ZipFile(zp) as z:
         data = json.loads(z.read("labels.json").decode("utf-8"))
         for r in data.get("labels", []):
-            answers[r["id"]] = nfc(r["call"])
-print(f"[라벨] zip {len(zips)}개 → 답변 {len(answers)}개 (id 중복 최신 우선)")
+            answers[r["id"]] = nfc(r["call"]); notlabels.discard(r["id"])
+        for i in data.get("notlabels", []):
+            notlabels.add(i); answers.pop(i, None)
+print(f"[라벨] zip {len(zips)}개 → 답변 {len(answers)}개 · 라벨아님 {len(notlabels)}개 (id 중복 최신 우선)")
+if notlabels:                                          # 사람이 확정한 검출 오탐 = 검출기 v4 하드 네거티브
+    hn = OUT/"hard_negatives.txt"
+    old = set(io.open(hn, encoding="utf-8").read().split()) if hn.exists() else set()
+    io.open(hn, "w", encoding="utf-8").write("\n".join(sorted(old | notlabels)) + "\n")
+    print(f"[하드네거티브] {hn} — 누적 {len(old | notlabels)}개")
 
 # 2) 크롭 찾기 → 줄 분해 → 사람 GT 성분과 매칭 (변환기 call-확정 경로와 동일 기준)
 meta_path = OUT/"meta_human.txt"
