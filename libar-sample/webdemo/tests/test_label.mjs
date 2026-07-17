@@ -24,6 +24,8 @@ const out = await page.evaluate(async () => {
   pick('__notlabel');                                  // 셋째는 검출 오탐 표시 (하드 네거티브 분리)
   hits('909');                                         // 카탈로그 검색 동작
   const nHits = document.getElementById('hits').children.length;
+  hits('375.226 교52ㅇ');                              // 목록 밖 책 → 직접 입력 버튼 (스페이스→하이픈)
+  const directBtn = document.querySelector('#hits button')?.textContent || '';
   await submitLabels();
   window.fetch = orig;
   if (!captured) return { err: '전송 fetch 미호출' };
@@ -31,7 +33,7 @@ const out = await page.evaluate(async () => {
   const meta = JSON.parse(await zip.file('labels.json').async('string'));
   return { name: captured.name, n: meta.labels.length, skipped: meta.skipped,
            notlabels: meta.notlabels.length,
-           withReads,
+           withReads, directBtn,
            id: meta.labels[0].id, call: meta.labels[0].call, nCands, nHits, total: items.length };
 });
 await browser.close();
@@ -44,5 +46,6 @@ assert(out.n === 1 && out.skipped === 1 && out.notlabels === 1,
 assert(out.withReads / out.total >= 0.5, `판독줄 있는 조각 비율 붕괴: ${out.withReads}/${out.total}`);
 assert(/^\d{13}_crop_\d+$/.test(out.id), `id 형식 이상(병합 불가): ${out.id}`);
 assert(out.nHits > 0, '카탈로그 검색 결과 0');
+assert(out.directBtn.includes('375.226-교52ㅇ'), `목록 밖 직접 입력 버튼 실패: ${out.directBtn.slice(0, 60)}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
 console.log(`PASS test_label — 배치 ${out.total}개 · 후보 ${out.nCands} · 검색 ${out.nHits}건 · 전송 ${out.name} (${out.id}→${out.call})`);
