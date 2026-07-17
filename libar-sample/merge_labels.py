@@ -102,7 +102,9 @@ for cid, call in answers.items():
         if len(read) < 2: continue
         best = max(cands, key=lambda p: sim(read, p), default=None)
         # 사람 GT라도 줄-성분 대응은 판독으로 정렬 — 문턱 0.35 (v4가 못 읽는 줄이 핵심 재료라 낮게)
-        if best is None or sim(read, best) < 0.35: continue
+        # 단, 짧은 판독('03' 2글자)이 가려진 분류번호에 얹히면 환각 교재가 된다 — 짧으면 문턱 상향
+        s = sim(read, best) if best else 0
+        if best is None or s < 0.35 or (len(read) < 3 and s < 0.6): continue
         name = f"crops/{ztag}_{stem}_{li}_{re.sub(r'[^0-9A-Za-z가-힣.]', '', best)}.jpg"
         if name in have: continue
         cv2.imencode(".jpg", line, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tofile(str(OUT/name))
