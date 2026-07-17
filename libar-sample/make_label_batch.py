@@ -89,7 +89,9 @@ for l in io.open(HERE/"real_rec_data_field_v6/meta_field.txt", encoding="utf-8")
     p = l.split("\t")[0].split("/")[1].rsplit(".", 1)[0].split("_")
     done.add((p[0], f"{p[1]}_{p[2]}"))
 
-seen, items = set(), []
+# 선명도(라플라시안)는 글자 없는 쨍한 모서리에도 점수를 준다(1차 배치의 1번 조각 사고) —
+# 글자 줄(det)이 실제로 잡히는 조각만 라벨링 대상, 줄 0개는 하드 네거티브 후보로 분리.
+seen, pool = set(), []
 for zp in sorted(glob.glob(str(HERE/"수집조각/libar_crops_*.zip"))):
     ztag = Path(zp).stem.replace("libar_crops_", "")
     with zipfile.ZipFile(zp) as z:
@@ -105,21 +107,31 @@ for zp in sorted(glob.glob(str(HERE/"수집조각/libar_crops_*.zip"))):
             if img is None or img.shape[0] < 60: continue
             sharp = cv2.Laplacian(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var()
             if sharp < 80: continue                     # 사람도 못 읽을 뭉개짐은 제외
-            items.append((sharp, ztag, stem, img))
-items.sort(key=lambda t: -t[0])
-items = items[:TOP]
-print(f"[선별] 후보 {len(items)}개 (선명도순) — 판독·후보 생성 중…")
+            pool.append((sharp, ztag, stem, img))
+pool.sort(key=lambda t: -t[0])
+print(f"[풀] {len(pool)}개 — 글자 줄 유무 판별 중…")
 
-out = []
-for k, (sharp, ztag, stem, img) in enumerate(items):
+out, hardneg = [], []
+for k, (sharp, ztag, stem, img) in enumerate(pool):
+    if len(out) >= TOP: break
     big = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_LANCZOS4)
-    reads = [r for _, line in det_lines(big) if len(r := rec_line(line)) >= 2]
+    lines = det_lines(big)
+    if not lines:                                       # 글자 줄 0 = 오탐/빈 조각 → 검출기 재료
+        hardneg.append(f"{ztag}_{stem}")
+        continue
+    reads = [r for _, line in lines if len(r := rec_line(line)) >= 2]
     h, w = img.shape[:2]
     disp = cv2.resize(img, (int(w*260/h), 260)) if h > 260 else img
     jpg = cv2.imencode(".jpg", disp, [cv2.IMWRITE_JPEG_QUALITY, 82])[1]
     out.append({"id": f"{ztag}_{stem}", "img": "data:image/jpeg;base64," + base64.b64encode(jpg).decode(),
-                "reads": reads, "cands": [{"call": c, "title": CALL_TITLE.get(c, "")[:28]} for c in cands_from(reads)]})
-    if (k+1) % 100 == 0: print(f"  {k+1}/{len(items)}")
+                "reads": reads, "nl": len(lines),
+                "cands": [{"call": c, "title": CALL_TITLE.get(c, "")[:28]} for c in cands_from(reads)]})
+    if (k+1) % 200 == 0: print(f"  훑음 {k+1} → 채택 {len(out)}")
+# 글자 줄 많은 조각(온전한 라벨일 확률↑)부터 — 라벨링 체감 속도용 2차 정렬
+out.sort(key=lambda it: (-it["nl"], -len(it["reads"])))
+for it in out: it.pop("nl")
+io.open(HERE/"hardneg_candidates.txt", "w", encoding="utf-8").write("\n".join(hardneg) + "\n")
+print(f"[분리] 하드 네거티브 후보 {len(hardneg)}개 → hardneg_candidates.txt (검출기 v4 재료)")
 
 path = HERE/"webdemo/label_batch.json"
 json.dump({"made": "260717", "n": len(out), "items": out},

@@ -18,8 +18,10 @@ const out = await page.evaluate(async () => {
     ? (captured = JSON.parse(o.body), Promise.resolve(new Response('', { status: 200 })))
     : orig(u, o);
   const nCands = items[0].cands.length;
+  const withReads = items.filter(i => i.reads.length).length;
   pick(items[0].cands[0]?.call || '909-테스트');       // 첫 조각 답변
   pick('__skip');                                      // 둘째는 스킵 (전송 제외 확인)
+  pick('__notlabel');                                  // 셋째는 검출 오탐 표시 (하드 네거티브 분리)
   hits('909');                                         // 카탈로그 검색 동작
   const nHits = document.getElementById('hits').children.length;
   await submitLabels();
@@ -28,13 +30,18 @@ const out = await page.evaluate(async () => {
   const zip = await JSZip.loadAsync(captured.zip, { base64: true });
   const meta = JSON.parse(await zip.file('labels.json').async('string'));
   return { name: captured.name, n: meta.labels.length, skipped: meta.skipped,
+           notlabels: meta.notlabels.length,
+           withReads,
            id: meta.labels[0].id, call: meta.labels[0].call, nCands, nHits, total: items.length };
 });
 await browser.close();
 
 assert(!out.err, out.err);
 assert(out.name.startsWith('libar_labels_'), `zip 이름 규칙 위반: ${out.name}`);
-assert(out.n === 1 && out.skipped === 1, `답변/스킵 분리 실패: 답변 ${out.n}·스킵 ${out.skipped}`);
+assert(out.n === 1 && out.skipped === 1 && out.notlabels === 1,
+       `답변/스킵/라벨아님 분리 실패: ${out.n}/${out.skipped}/${out.notlabels}`);
+// 라벨링 배치는 글자 줄이 검출된 조각만 담아야 한다 (빈 모서리 조각이 1번으로 뜬 사고 회귀 방지)
+assert(out.withReads / out.total >= 0.5, `판독줄 있는 조각 비율 붕괴: ${out.withReads}/${out.total}`);
 assert(/^\d{13}_crop_\d+$/.test(out.id), `id 형식 이상(병합 불가): ${out.id}`);
 assert(out.nHits > 0, '카탈로그 검색 결과 0');
 assert(errs.length === 0, `페이지 오류: ${errs}`);
