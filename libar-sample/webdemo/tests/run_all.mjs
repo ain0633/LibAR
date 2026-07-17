@@ -28,7 +28,7 @@ if (!/match: 144\/144/.test(golden) || !/lis: 5\/5/.test(golden)) {
 console.log('PASS golden — ' + golden.trim().replace(/\n/g, ' · '));
 
 // 2) 브라우저 E2E — 순차 실행 (WebGPU 세션 경합 방지)
-const tests = ['test_scan.mjs', 'test_report.mjs', 'test_live.mjs', 'test_hishot.mjs', 'test_rotate.mjs', 'test_collect.mjs'];
+const tests = ['test_scan.mjs', 'test_report.mjs', 'test_live.mjs', 'test_hishot.mjs', 'test_rotate.mjs', 'test_collect.mjs', 'test_label.mjs'];
 let failed = 0;
 for (const t of tests) {
   try {
