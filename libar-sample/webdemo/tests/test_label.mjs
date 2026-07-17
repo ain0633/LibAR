@@ -30,6 +30,9 @@ const out = await page.evaluate(async () => {
   const volHit = document.getElementById('hits').innerHTML.includes('912-김65ㄷ-2=2');
   hits('005.133-모27ㅋ-2');                            // 오타(57→27) → 근사 추천
   const nearHit = document.getElementById('hits').innerHTML.includes('005.133-모57ㅋ-2');
+  hits('594.5 김64ㅁ');                                // 접두 이웃(594.54)이 잡혀도 직접 입력 버튼 공존
+  const h = document.getElementById('hits').innerHTML;
+  const coexist = h.includes('594.54-김64ㅁ') && h.includes('594.5-김64ㅁ');
   await submitLabels();
   window.fetch = orig;
   if (!captured) return { err: '전송 fetch 미호출' };
@@ -37,7 +40,7 @@ const out = await page.evaluate(async () => {
   const meta = JSON.parse(await zip.file('labels.json').async('string'));
   return { name: captured.name, n: meta.labels.length, skipped: meta.skipped,
            notlabels: meta.notlabels.length,
-           withReads, directBtn, volHit, nearHit,
+           withReads, directBtn, volHit, nearHit, coexist,
            id: meta.labels[0].id, call: meta.labels[0].call, nCands, nHits, total: items.length };
 });
 await browser.close();
@@ -52,6 +55,7 @@ assert(/^\d{13}_crop_\d+$/.test(out.id), `id 형식 이상(병합 불가): ${out
 assert(out.nHits > 0, '카탈로그 검색 결과 0');
 assert(out.volHit, '권차·복본 표기 변환 검색 실패 (v.2 c.2 → -2=2)');
 assert(out.nearHit, '오타 근사 추천 실패 (모27ㅋ → 모57ㅋ)');
+assert(out.coexist, '접두 이웃 히트 시 직접 입력 버튼 소실 (594.5 김64ㅁ)');
 assert(out.directBtn.includes('375.226-교52ㅇ'), `목록 밖 직접 입력 버튼 실패: ${out.directBtn.slice(0, 60)}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
 console.log(`PASS test_label — 배치 ${out.total}개 · 후보 ${out.nCands} · 검색 ${out.nHits}건 · 전송 ${out.name} (${out.id}→${out.call})`);
