@@ -96,15 +96,21 @@ for cid, call in answers.items():
     img = cv2.imdecode(np.frombuffer(raw, np.uint8), 1)
     if img is None: continue
     big = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_LANCZOS4)
-    cands = [p for p in call.split("-")[:2] if len(p) >= 2]
+    # 복본 표기(=2, =c.2)는 전산 꼬리 — 이미지에 없는 글자를 GT에 달지 않는다
+    cands = [p.split("=")[0] for p in call.split("-")[:2]]
+    cands = [p for p in cands if len(p) >= 2]
     for li, (y0, line) in enumerate(det_lines(big)):
         read = rec_line(line)
         if len(read) < 2: continue
+        if re.match(r"^[vcVC]\.?\d", read): continue   # 권차/복본 줄(v.2·c.2)은 학습 제외
         best = max(cands, key=lambda p: sim(read, p), default=None)
         # 사람 GT라도 줄-성분 대응은 판독으로 정렬 — 문턱 0.35 (v4가 못 읽는 줄이 핵심 재료라 낮게)
         # 단, 짧은 판독('03' 2글자)이 가려진 분류번호에 얹히면 환각 교재가 된다 — 짧으면 문턱 상향
         s = sim(read, best) if best else 0
         if best is None or s < 0.35 or (len(read) < 3 and s < 0.6): continue
+        digits = sum(c.isdigit() for c in read) / len(read)
+        if re.search(r"[가-힣]", best) and digits > 0.7: continue   # 숫자 줄이 저자기호 GT에 붙는 오배정 차단
+        if best[0].isdigit() and "." in best and "." not in read and s < 0.7: continue   # 소수점 안 보이는 조각 + 긴 분류 GT 금지
         name = f"crops/{ztag}_{stem}_{li}_{re.sub(r'[^0-9A-Za-z가-힣.]', '', best)}.jpg"
         if name in have: continue
         cv2.imencode(".jpg", line, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tofile(str(OUT/name))
