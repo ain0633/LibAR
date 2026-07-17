@@ -83,11 +83,21 @@ def cands_from(reads):
                     scored[call] = max(scored.get(call, 0), base + s)
     return [c for c, _ in sorted(scored.items(), key=lambda kv: -kv[1])[:5]]
 
-# 정답 이미 있는 크롭 제외
+# 정답 이미 있는 크롭 제외 (소급 매칭분 + 사람 라벨링 답변·라벨아님 — 팀원 중복 작업 방지)
+# 스킵은 zip에 id가 없어 제외 불가 — 의도적으로 남긴다: 다른 사람 눈이 읽어낼 수 있는 재시도 기회
 done = set()
 for l in io.open(HERE/"real_rec_data_field_v6/meta_field.txt", encoding="utf-8"):
     p = l.split("\t")[0].split("/")[1].rsplit(".", 1)[0].split("_")
     done.add((p[0], f"{p[1]}_{p[2]}"))
+for zp in glob.glob(str(HERE/"수집조각/libar_labels_*.zip")):
+    with zipfile.ZipFile(zp) as z:
+        d = json.loads(z.read("labels.json").decode("utf-8"))
+        for r in d.get("labels", []):
+            m = r["id"].split("_", 1)
+            done.add((m[0], m[1]))
+        for i in d.get("notlabels", []):
+            m = i.split("_", 1)
+            done.add((m[0], m[1]))
 
 # 선명도(라플라시안)는 글자 없는 쨍한 모서리에도 점수를 준다(1차 배치의 1번 조각 사고) —
 # 글자 줄(det)이 실제로 잡히는 조각만 라벨링 대상, 줄 0개는 하드 네거티브 후보로 분리.
