@@ -70,3 +70,4 @@ libar-sample/학습기록_*.csv
 libar-sample/webdemo/demo/
 libar-sample/webdemo/tests/node_modules/
 libar-sample/webdemo/label_batch.json
+libar-sample/yolo_labelset_v5/
