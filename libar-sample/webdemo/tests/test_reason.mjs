@@ -18,7 +18,20 @@ const r = await page.evaluate(() => {
   const shown = pop && pop.style.display === 'block' && pop.textContent.includes(bad.call);
   hideReason();
   const hidden = pop.style.display === 'none';
-  return { mis, reason, shown, hidden };
+  // 조치 완료 체크: 시트 렌더 → 완료 → 카운터 0·완료 표시 (합성 캔버스를 판독 이미지로)
+  lastImg = mkCanvas(100, 20);
+  fillSheet(lastImg, rows);
+  const misBefore = document.getElementById('c-mis').textContent;
+  resolveMis(bad);
+  const misAfter = document.getElementById('c-mis').textContent;
+  const doneShown = document.getElementById('list-mis').textContent.includes('재배열 완료');
+  // 판독 불가 안내 카드 표시/닫기
+  showNoRead('photo');
+  const nr = document.getElementById('noReadPop');
+  const nrShown = nr && nr.style.display === 'block' && nr.textContent.includes('못 읽었어요');
+  hideNoRead();
+  const nrHidden = nr.style.display === 'none';
+  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, nrShown, nrHidden };
 });
 await browser.close();
 
@@ -30,5 +43,8 @@ assert(r.reason.exp.left === '005.3-라4' && r.reason.exp.right === null,
   `올바른 자리 오류: ${JSON.stringify(r.reason.exp)}`);
 assert(r.shown, '근거 팝업이 표시되지 않음');
 assert(r.hidden, '근거 팝업 닫기 실패');
+assert(r.misBefore === '1' && r.misAfter === '0', `조치 체크 카운터: ${r.misBefore}→${r.misAfter} (기대 1→0)`);
+assert(r.doneShown, '완료 항목이 시트에 표시되지 않음');
+assert(r.nrShown && r.nrHidden, `판독불가 카드 표시/닫기 실패: ${r.nrShown}/${r.nrHidden}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 지금 ${r.reason.phys.left}↔${r.reason.phys.right} · 올바른자리 ${r.reason.exp.left}↔서가끝 · 팝업 표시/닫기 OK`);
+console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 근거(${r.reason.phys.left}↔${r.reason.phys.right} → ${r.reason.exp.left}↔끝) · 조치 1→0 · 판독불가 카드 OK`);
