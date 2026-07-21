@@ -25,13 +25,23 @@ const r = await page.evaluate(() => {
   resolveMis(bad);
   const misAfter = document.getElementById('c-mis').textContent;
   const doneShown = document.getElementById('list-mis').textContent.includes('재배열 완료');
+  // "다시 확인" 중복 박스 병합: 확인책과 겹친 미판독 1(제외) + 서로 겹친 미판독 2(1권) + 독립 1 → 2권
+  const rows2 = [
+    { band: 0, call: '005.1-가1', how: '청구기호', box: [0, 0, 10, 10] },
+    { band: 0, call: null, box: [2, 0, 12, 10] },
+    { band: 0, call: null, box: [30, 0, 40, 10] },
+    { band: 0, call: null, box: [33, 0, 43, 10] },
+    { band: 0, call: null, box: [60, 0, 70, 10] },
+  ];
+  fillSheet(lastImg, rows2);
+  const grayN = document.getElementById('c-gray').textContent;
   // 판독 불가 안내 카드 표시/닫기
   showNoRead('photo');
   const nr = document.getElementById('noReadPop');
   const nrShown = nr && nr.style.display === 'block' && nr.textContent.includes('못 읽었어요');
   hideNoRead();
   const nrHidden = nr.style.display === 'none';
-  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, nrShown, nrHidden };
+  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, grayN, nrShown, nrHidden };
 });
 await browser.close();
 
@@ -45,6 +55,7 @@ assert(r.shown, '근거 팝업이 표시되지 않음');
 assert(r.hidden, '근거 팝업 닫기 실패');
 assert(r.misBefore === '1' && r.misAfter === '0', `조치 체크 카운터: ${r.misBefore}→${r.misAfter} (기대 1→0)`);
 assert(r.doneShown, '완료 항목이 시트에 표시되지 않음');
+assert(r.grayN === '2', `다시 확인 중복 병합: ${r.grayN} (기대 2 — 확인책 겹침 제외·중복쌍 병합·독립 유지)`);
 assert(r.nrShown && r.nrHidden, `판독불가 카드 표시/닫기 실패: ${r.nrShown}/${r.nrHidden}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 근거(${r.reason.phys.left}↔${r.reason.phys.right} → ${r.reason.exp.left}↔끝) · 조치 1→0 · 판독불가 카드 OK`);
+console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 근거(${r.reason.phys.left}↔${r.reason.phys.right} → ${r.reason.exp.left}↔끝) · 조치 1→0 · 다시확인 병합 2 · 판독불가 카드 OK`);
