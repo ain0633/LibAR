@@ -40,6 +40,21 @@ const r = await page.evaluate(async ([popCall, recCall]) => {
   const offPop = document.getElementById('discPop').style.display === 'none';
   return { popPins, popTitleMsg, popShown, popText, recPins, recText, offPins, offPop };
 }, [popB.call, recB.call]);
+// 도서찾기 탭 경로: 검색/추천/인기 선택지 + 스캔 알림표(pill) 연동
+await page.evaluate(() => { openFind(); });
+await page.waitForFunction('typeof findIdx !== "undefined" && findIdx && findIdx.length > 0', { timeout: 60000, polling: 500 });
+const tabs = await page.evaluate(async () => {
+  await findTab('pop');
+  const popRows = document.getElementById('find-list').children.length;
+  const pillOn = !document.getElementById('disc-pill').classList.contains('hidden');
+  const inputHidden = document.getElementById('find-q').classList.contains('hidden');
+  await findTab('rec');
+  const recRows = document.getElementById('find-list').children.length;
+  await findTab('search');
+  return { popRows, pillOn, inputHidden, recRows,
+           pillOff: document.getElementById('disc-pill').classList.contains('hidden'),
+           discOff: discMode === null };
+});
 await browser.close();
 
 assert(r.popPins === 1, `인기대출 핀 수: ${r.popPins} (기대 1)`);
@@ -50,5 +65,8 @@ assert(r.recPins === 1, `사서추천 핀 수: ${r.recPins} (기대 1)`);
 assert(r.recText.includes(recB.title.slice(0, 8)) && r.recText.includes(recB.note.slice(0, 10)),
        `추천사 표기 없음: ${r.recText.slice(0, 80)}`);
 assert(r.offPins === 0 && r.offPop, `해제 후 잔존: 핀 ${r.offPins}, 팝업 ${r.offPop}`);
+assert(tabs.popRows > 10 && tabs.recRows > 10, `탭 목록 부족: pop ${tabs.popRows} rec ${tabs.recRows}`);
+assert(tabs.pillOn && tabs.inputHidden, `인기 탭 상태: pill ${tabs.pillOn}, 검색창 숨김 ${tabs.inputHidden}`);
+assert(tabs.pillOff && tabs.discOff, `검색 탭 복귀 후 해제 실패: pill숨김 ${tabs.pillOff}, disc ${tabs.discOff}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · ⭐핀·추천사 · 전환·해제 OK (동봉 ${pop.length}+${rec.length}권)`);
+console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · ⭐핀·추천사 · 전환·해제 · 찾기 탭(pop ${tabs.popRows}·rec ${tabs.recRows}행)·pill 연동 OK`);
