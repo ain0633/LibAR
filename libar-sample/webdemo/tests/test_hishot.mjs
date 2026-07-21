@@ -21,6 +21,16 @@ const out = await page.evaluate(async () => {
     camAlive: cam.videoWidth > 0, liveOn: live,
   };
 });
+// 셔터 패턴: 판독 중 정지 화면 표시 → 종료 시 카메라 복귀 (블랙 화면 가림 경로)
+const still = await page.evaluate(async () => {
+  const cam = document.getElementById('cam'), photo = document.getElementById('photo');
+  const frame = mkCanvas(80, 60); frame.getContext('2d').fillRect(0, 0, 80, 60);
+  await showStill(frame);
+  const during = { camHidden: cam.classList.contains('hidden'),
+                   photoSet: /^(data:image\/jpeg|blob:)/.test(photo.src) };
+  hideStill();
+  return { ...during, camBack: !cam.classList.contains('hidden') };
+});
 // 원샷 후에도 정지·재시작이 멀쩡한지 (회전 수술 때 잡은 레이스 계열 회귀 방지)
 await page.evaluate(async () => { await toggleLive(false); toggleLive(); });
 await new Promise(r => setTimeout(r, 1500));
@@ -33,5 +43,7 @@ assert(out.hiW >= out.fcW || out.same, `원샷이 프레임보다 작음(폴백�
 assert(out.trackAlive === 'live' && out.camAlive, `원샷 후 스트림 사망: ${out.trackAlive}`);
 assert(out.liveOn, '원샷 후 라이브 플래그 꺼짐');
 assert(after.liveOn && after.camW > 0, '원샷 후 정지→재시작 실패');
+assert(still.camHidden && still.photoSet, `셔터 정지 화면 표시 실패: ${JSON.stringify(still)}`);
+assert(still.camBack, '셔터 종료 후 카메라 미복귀');
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_hishot — ${out.same ? '폴백(프레임 유지)' : out.info} · 프레임 ${out.fcW} → 원샷 ${out.hiW} · 스트림 생존`);
+console.log(`PASS test_hishot — ${out.same ? '폴백(프레임 유지)' : out.info} · 프레임 ${out.fcW} → 원샷 ${out.hiW} · 스트림 생존 · 셔터 표시/복귀 OK`);
