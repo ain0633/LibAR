@@ -214,8 +214,8 @@ body("LibAR(Library + AR)는 스마트폰 브라우저에서 열리는 웹 서�
      "동작하는 공개 데모의 실행 화면입니다.")
 banner("이용자 기능 — 도서찾기·길안내: 청구기호를 몰라도 책 앞까지")
 captioned_row([
-    (SCRATCH/"v2_home.png", "① 홈 — 이용자·사서 입구"),
-    (SCRATCH/"v2_find.png", "② 검색 — 전 장서 20,944권"),
+    (SCRATCH/"v2_find.png", "① 도서찾기 — 검색·추천도서·인기대출 선택지"),
+    (SCRATCH/"v2_find_pop.png", "② 인기대출 목록 — 전국 대출 빅데이터 중 소장분"),
     (SCRATCH/"v2_guide.png", "③ 길안내 — 층별 지도로 서가까지"),
 ], 43)
 captioned_row([
