@@ -35,13 +35,24 @@ const r = await page.evaluate(() => {
   ];
   fillSheet(lastImg, rows2);
   const grayN = document.getElementById('c-gray').textContent;
+  // 라이브 병합 시트 회귀(7/23 현장 크래시): sessionBooks 누적분(band·box·thumbData 동승) + 현재 프레임
+  // 미판독을 합친 rows로 fillSheet — box 없는 구형 누적분이 섞여도 sameBook 좌표 접근에서 죽지 않아야 함
+  const mergedRows = [
+    { call: '005.1-가1', title: 'ㄱ', mis: false, band: 0, box: [0, 0, 10, 10] },
+    { call: '005.9-구1', title: 'ㄴ', mis: false, thumbData: 'data:,' },   // 구버전 누적분(box 없음) — 가드 검증
+    { band: 0, call: null, box: [2, 0, 12, 10] },
+    { band: 0, call: null, box: [60, 0, 70, 10] },
+  ];
+  let mergedErr = null;
+  try { fillSheet(lastImg, mergedRows); } catch (e) { mergedErr = String(e); }
+  const mergedGray = document.getElementById('c-gray').textContent;
   // 판독 불가 안내 카드 표시/닫기
   showNoRead('photo');
   const nr = document.getElementById('noReadPop');
   const nrShown = nr && nr.style.display === 'block' && nr.textContent.includes('못 읽었어요');
   hideNoRead();
   const nrHidden = nr.style.display === 'none';
-  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, grayN, nrShown, nrHidden };
+  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, grayN, mergedErr, mergedGray, nrShown, nrHidden };
 });
 await browser.close();
 
@@ -56,6 +67,8 @@ assert(r.hidden, '근거 팝업 닫기 실패');
 assert(r.misBefore === '1' && r.misAfter === '0', `조치 체크 카운터: ${r.misBefore}→${r.misAfter} (기대 1→0)`);
 assert(r.doneShown, '완료 항목이 시트에 표시되지 않음');
 assert(r.grayN === '2', `다시 확인 중복 병합: ${r.grayN} (기대 2 — 확인책 겹침 제외·중복쌍 병합·독립 유지)`);
+assert(r.mergedErr === null, `라이브 병합 시트 크래시 재발: ${r.mergedErr}`);
+assert(r.mergedGray === '1', `병합 시트 다시확인 수: ${r.mergedGray} (기대 1 — 확인책 겹침 1 제외·독립 1)`);
 assert(r.nrShown && r.nrHidden, `판독불가 카드 표시/닫기 실패: ${r.nrShown}/${r.nrHidden}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
 console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 근거(${r.reason.phys.left}↔${r.reason.phys.right} → ${r.reason.exp.left}↔끝) · 조치 1→0 · 다시확인 병합 2 · 판독불가 카드 OK`);
