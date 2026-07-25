@@ -31,6 +31,7 @@ if (location.hash.includes('debug')) {
 <style>
   @keyframes pulse-glow { 0%{box-shadow:0 0 0 0 rgba(75,226,119,.4)} 70%{box-shadow:0 0 0 10px rgba(75,226,119,0)} 100%{box-shadow:0 0 0 0 rgba(75,226,119,0)} }
   @keyframes upslide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
+  @keyframes spin { to{transform:rotate(360deg)} }
   .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
   .view { display:none; } .view.active { display:block; }
   #sheet { transition:transform .28s cubic-bezier(.3,.9,.3,1); }
@@ -183,6 +184,11 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
   <div class="absolute inset-0 bg-black">
     <img id="photo" class="absolute inset-0 w-full h-full object-contain" alt="">
     <video id="cam" class="absolute inset-0 w-full h-full object-contain hidden" autoplay muted playsinline></video>
+    <!-- 셔터 판독 오버레이: 정지 화면이 "멈춤·오류"로 보이지 않게 — 스피너가 살아있음을 증명 -->
+    <div id="still-ov" class="absolute inset-0 pointer-events-none flex-col items-center justify-center gap-3" style="display:none;background:rgba(0,0,0,.45)">
+      <div style="width:44px;height:44px;border:4px solid rgba(75,226,119,.25);border-top-color:#4be277;border-radius:50%;animation:spin 1s linear infinite"></div>
+      <div id="still-msg" class="text-sm font-bold text-white text-center px-8" style="text-shadow:0 1px 4px rgba(0,0,0,.8)"></div>
+    </div>
   </div>
   <div id="ar" class="absolute inset-0 pointer-events-none"></div>
 
@@ -1039,6 +1045,14 @@ const sessionBooks = new Map();            // 라이브 세션 누적: call → 
 // ①ImageCapture.takePhoto(안드로이드, 진짜 고해상) ②스트림 해상도 순간 승격→캡처→원복(iOS 경로)
 // ③둘 다 실패면 현재 프레임 그대로 = 기존 동작 — 어느 단이 잡혔는지 dev-info에 표시
 let _hiCnv = null, _hiInfo = '';
+function isBlackFrame(cnv) {       // 재협상 스톨 캡처 감지: 32×24 평균 밝기 — 실제 서가는 어두워도 훨씬 밝다
+  const s = mkCanvas(32, 24), g = s.getContext('2d', { willReadFrequently: true });
+  g.drawImage(cnv, 0, 0, 32, 24);
+  const d = g.getImageData(0, 0, 32, 24).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+  return sum / (d.length / 4 * 3) < 5;
+}
 async function hiShot(fallback) {
   const track = stream?.getVideoTracks?.()[0];
   const fw = fallback.width;
@@ -1067,14 +1081,23 @@ async function hiShot(fallback) {
       // 4K(8.3MP)는 판독 피크가 WebKit 탭 예산을 때려 jetsam 크래시 루프(16 Pro 현장 실증) —
       // 2560(3.7MP)이면 픽셀 1.8배 이득은 유지하면서 메모리·발열 절반 이하
       await track.applyConstraints({ width: { ideal: 2560 }, height: { ideal: 1440 } });
-      await new Promise(r => setTimeout(r, 350));      // 스트림 재협상 대기
+      // iOS는 해상도 재협상 후 <video>를 정지 상태로 둘 수 있다(스트림 생존·화면만 블랙) —
+      // 재생을 캡처 앞으로: 멈춘 비디오를 350ms 뒤에 drawImage하면 검은 프레임을 "찍고"
+      // 그 검은 정지 화면이 판독 20초 내내 떠서 오류처럼 보인다 (07-24 현장 리포트)
+      cam.play?.().catch(() => {});
+      await new Promise(r => {                         // 재협상 뒤 실제 프레임 도착까지 대기
+        if (cam.requestVideoFrameCallback) {
+          const t = setTimeout(r, 700);                //   프레임이 영영 안 오면(스톨) 타임아웃
+          cam.requestVideoFrameCallback(() => { clearTimeout(t); r(); });
+        } else setTimeout(r, 350);                     //   rVFC 미지원 기기는 기존 대기 유지
+      });
       let c = null;
       if (live && cam.videoWidth > fw) {
         c = grab(cam, cam.videoWidth, cam.videoHeight);
-        _hiInfo = `원샷 ${c.width}×${c.height} ⬆`;
+        if (isBlackFrame(c)) c = null;                 // 그래도 검은 캡처면 폐기 — 폴백(직전 라이브 프레임)이 낫다
+        else _hiInfo = `원샷 ${c.width}×${c.height} ⬆`;
       }
       await track.applyConstraints({ width: { ideal: 1920 } }).catch(() => {});
-      // iOS는 해상도 재협상 후 <video>를 정지 상태로 둘 수 있다(스트림 생존·화면만 블랙) — 강제 재생
       cam.play?.().catch(() => {});
       if (c) return c;
     } catch(e) {}
@@ -1095,12 +1118,16 @@ async function showStill(frame) {
     _stillUrl = url; photo.src = url;
   }
   document.getElementById('cam').classList.add('hidden');
+  document.getElementById('still-ov').style.display = 'flex';   // 스피너 오버레이 — 멈춤·오류가 아니라 진행 중
+  stillMsg('📸 찍었어요 — 읽는 동안 폰을 내려놔도 돼요');
   // 판독(20~40초) 동안 카메라 센서 휴면 — 정지 화면 뒤에서 ISP·오토포커스가 도는 건 순수 발열.
   // enabled 토글은 재협상이 없어(applyConstraints와 달리) iOS 블랙 위험 낮음, 복귀는 hideStill서
   if (stream) stream.getVideoTracks().forEach(t => t.enabled = false);
 }
+function stillMsg(m) { document.getElementById('still-msg').textContent = m; }
 function hideStill() {
   if (stream) stream.getVideoTracks().forEach(t => t.enabled = true);
+  document.getElementById('still-ov').style.display = 'none';
   const cam = document.getElementById('cam');
   cam.classList.remove('hidden');
   cam.play?.().catch(() => {});
@@ -1240,7 +1267,8 @@ async function toggleLive(analyze = true) {
         }
         const hrows = hi === fc ? rows : await detect(hi, 1280);
         const okRec = await recognizeAll(hi, hrows, m => { readMsg = `📸 ${m} — 폰을 내려놔도 돼요`;
-          document.getElementById('scan-title').textContent = readMsg; });
+          document.getElementById('scan-title').textContent = readMsg;
+          stillMsg(`${m} — 폰을 내려놔도 돼요`); });     // 오버레이에도 진행 상황 (줄 n/m)
         if (okRec && live && gen === liveGen) {
           let nNew = 0;                              // 프레임 투표 합산: 세션에 누적 (덮어쓰기 금지)
           for (const r of hrows) if (r.call) {
