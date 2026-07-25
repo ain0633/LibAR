@@ -343,7 +343,7 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
 // ── 버전 표기(사용자 요청): 배포할 때마다 아래 두 값만 갱신 — 홈 하단 개발자 정보·브라우저 탭에 표시 ──
-const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 15:55';
+const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 16:20';
 document.getElementById('app-ver').textContent = `${APP_VER} · ${APP_UPDATED} 업데이트`;
 document.title = `LibAR ${APP_VER} — 서가 스캔`;
 
@@ -745,7 +745,11 @@ function foundStop(hrows) {
   if (stream) stream.getTracks().forEach(t => t.stop());
   document.getElementById('btn-live').textContent = '▶ 재개';
   document.getElementById('still-ov').style.display = 'none';    // 스피너만 내리고 찍힌 사진은 유지
-  drawBoxes(document.getElementById('photo'), hrows);            // live=false + findTarget → 핀만 렌더
+  const photo = document.getElementById('photo');
+  // 정지 사진을 최신 렌더 상태로 등록 — iOS는 주소창 개폐만으로 resize를 발사하고, resize 핸들러가
+  // lastImg(이전 사진 스캔)의 낡은 rows로 #ar를 다시 그려 핀을 지웠다(멘트만 남는 간헐 증상, 07-25 현장)
+  lastImg = photo; lastRows = hrows; lastLocate = null;
+  drawBoxes(photo, hrows);                                       // live=false + findTarget → 핀만 렌더
   document.getElementById('scan-title').textContent =
     `📍 찾는 책이 여기 있어요! — ${(findTarget.title || findTarget.call).slice(0, 14)} (사진 속 위치예요)`;
 }

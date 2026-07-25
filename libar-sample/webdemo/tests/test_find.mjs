@@ -37,15 +37,20 @@ const r = await page.evaluate(() => {
   findTarget = { call: ord[j7].call };
   const F = findCandidates([mk(ord[i6].call, 0)]);
   const F_sec = ord[j7].sec;
-  // ⑧ 라이브 발견 정지(foundStop): 라이브를 멈추고 찍힌 사진 위에 핀만 — 스피너 내림·▶재개 복귀
+  // ⑧ 라이브 발견 정지(foundStop): 라이브를 멈추고 찍힌 사진 위에 핀만 — 스피너 내림·▶재개 복귀.
+  //    낡은 lastImg가 남은 상태에서 resize(iOS 주소창 개폐)가 와도 핀이 지워지지 않아야 한다
   findTarget = { call: '673.53-황24ㄷ', title: '다락방 재즈' };
   live = true;
   document.getElementById('still-ov').style.display = 'flex';
+  lastImg = mkCanvas(50, 50); lastRows = [mk('999-가1', 0)];    // 이전 사진 스캔의 낡은 렌더 상태 재현
   foundStop([mk('673.52-가11ㄱ', 0), mk('673.53-황24ㄷ', 20), mk('674-다33ㄷ', 40)]);
   const G = { liveOff: !live, ovOff: document.getElementById('still-ov').style.display === 'none',
               pinN: document.getElementById('ar').children.length,
               btn: document.getElementById('btn-live').textContent,
               title: document.getElementById('scan-title').textContent };
+  dispatchEvent(new Event('resize'));                           // 주소창 개폐 시뮬레이션
+  G.pinAfterResize = document.getElementById('ar').children.length;
+  G.pinLabel = document.getElementById('ar').children[0]?.textContent || '';
   findTarget = null;
   return { A, B, C, D, arN, E, F, F_sec, G };
 });
@@ -62,5 +67,7 @@ assert(r.F.mode === 'none' && r.F.sec === r.F_sec, `구간 리다이렉트: ${JS
 assert(r.G.liveOff && r.G.ovOff, `발견 정지: 라이브 미종료 또는 스피너 잔존 ${JSON.stringify(r.G)}`);
 assert(r.G.pinN === 1 && r.G.btn === '▶ 재개' && r.G.title.includes('찾는 책이 여기'),
        `발견 정지 렌더: ${JSON.stringify(r.G)} (기대 핀 1·▶재개·안내 문구)`);
+assert(r.G.pinAfterResize === 1 && r.G.pinLabel.includes('673.53-황24ㄷ'),
+       `resize 후 핀 유실: ${JSON.stringify(r.G)} (기대 핀 1·타깃 라벨 유지)`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
 console.log(`PASS test_find — 직독 98% · 유일 후보 95% · 2후보 45%씩 · 방향 안내 · 오버레이 후보만 렌더 · 거리 15권 · 구간 리다이렉트 · 발견 정지 핀`);
