@@ -214,7 +214,7 @@ tailwind.config = { darkMode:"class", theme:{ extend:{
 
   <!-- 부가 기능 (시트 위 우하단, manyfast n12 정리): 사서용 3개 노출 · 팀·개발용은 ⋯ 접기 -->
   <div class="fixed right-3 z-40 flex flex-col items-end gap-1.5" style="bottom:130px; pointer-events:auto">
-    <label class="bg-primary/90 text-on-primary backdrop-blur border border-primary rounded-lg px-3 py-2 text-xs font-bold cursor-pointer">
+    <label id="btn-photocheck" class="bg-primary/90 text-on-primary backdrop-blur border border-primary rounded-lg px-3 py-2 text-xs font-bold cursor-pointer">
       📷 사진 점검 (사서용)<input type="file" accept="image/*" capture="environment" id="photocheck" class="hidden"></label>
     <div id="insp-count" class="hidden bg-surface-container/85 backdrop-blur border border-outline-variant rounded-md px-2 py-1 text-[10px] text-on-surface-variant"></div>
     <label class="bg-surface-container/85 backdrop-blur border border-outline-variant rounded-lg px-3 py-2 text-xs font-bold cursor-pointer">
@@ -287,7 +287,9 @@ let sess = null, lastRows = null, lastImg = null, lastMs = 0, expanded = false, 
 function show(v) { document.querySelectorAll('.view').forEach(e => e.classList.remove('active'));
   document.getElementById('view-' + v).classList.add('active');
   if (v === 'dash') renderDash();
-  if (v === 'home') { findTarget = null; liveFound = null; setDiscMode(null); } }   // 홈 복귀 = 찾기·탐색 해제
+  if (v === 'home') { findTarget = null; setDiscMode(null); }        // 홈 복귀 = 찾기·탐색 해제
+  // 찾기 모드(이용자)의 스캔 화면엔 사서용 사진 점검 버튼을 숨긴다 (07-25 사용자 요청)
+  if (v === 'scan') document.getElementById('btn-photocheck').classList.toggle('hidden', !!findTarget); }
 
 // ── 사서 점검 현황 (manyfast n5 축약): 전부 실데이터 — 세션 요약 + 리포트 전송 시 기기 저장 ──
 function renderDash() {
@@ -343,7 +345,7 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
 // ── 버전 표기(사용자 요청): 배포할 때마다 아래 두 값만 갱신 — 홈 하단 개발자 정보·브라우저 탭에 표시 ──
-const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 16:20';
+const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 16:45';
 document.getElementById('app-ver').textContent = `${APP_VER} · ${APP_UPDATED} 업데이트`;
 document.title = `LibAR ${APP_VER} — 서가 스캔`;
 
@@ -598,9 +600,12 @@ async function recognizeAll(img, rows, onMsg) {
   if (!_risk) _risk = buildRiskGroups(await loadCatalogRaw());
   await titleArbitrate(img, rows);                     // 위험군 한정 선별 제목 대조 (~2% 책만 발동)
   lastRecMs = performance.now() - t0;
-  flagMisplaced(rows);                                 // 오배열 플래그는 직독(청구기호)만
+  judgeRows(rows);
   return true;
 }
+// 오배열 플래그는 직독(청구기호)만. 찾기 모드(이용자)는 판정 자체를 생략 —
+// 책 찾는 화면에 빨간 경보를 띄우지 않는다 (07-25 사용자 요청)
+function judgeRows(rows) { if (!findTarget) flagMisplaced(rows); }
 
 // 공통 스캔 경로: 검출 → (진행 표시) → 인식·대조·판정 → 최종 렌더
 let scanning = false;                                  // 판독 20~30초 — 중복 실행 시 결과 뒤섞임 방지
