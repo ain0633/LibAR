@@ -343,7 +343,7 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
 // ── 버전 표기(사용자 요청): 배포할 때마다 아래 두 값만 갱신 — 홈 하단 개발자 정보·브라우저 탭에 표시 ──
-const APP_VER = 'v1.1', APP_UPDATED = '2026-07-24 18:14';
+const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 15:55';
 document.getElementById('app-ver').textContent = `${APP_VER} · ${APP_UPDATED} 업데이트`;
 document.title = `LibAR ${APP_VER} — 서가 스캔`;
 
@@ -730,10 +730,9 @@ function drawBoxes(img, rows) {
     else { d.style.border = '1px solid rgba(134,149,133,.55)'; d.style.background = 'rgba(45,52,73,.22)'; }
     ar.appendChild(d);
   }
-  if (findTarget) {                                    // 정지 화면: 판독 결과에서 찾는 책 짚기
-    const hit = rows.find(r => r.call === findTarget.call);
-    if (hit) targetPin(ar, hit.box, s, ox, oy, findTarget.call);
-  }
+  // (제거됨 07-25) 라이브 중 핀 잔존 경로: findTarget 정지 화면은 위 조기 return이 전담하므로
+  // 여기 도달하는 findTarget 렌더는 라이브뿐이었고, 폴백 판독(hi===fc)이 라이브 rows에 call을 심으면
+  // 매 프레임 판독 시점 좌표로 핀을 그려 폰을 내리면 바닥을 가리켰다 — 핀은 foundStop 정지 사진에서만
   if (discMode && !live) {                             // 이용자 탐색: 인기대출·사서추천 도서 하이라이트
     const m = _disc[discMode] || new Map();
     for (const r of rows) if (r.call && m.has(r.call)) discPin(ar, r, s, ox, oy, m.get(r.call));
@@ -1144,17 +1143,20 @@ function hideStill() {
 // 결과 동일·연산만 생략). 움직임 감지 즉시 정상 검출 복귀 = 반응성 손실 0. 안전망: 연속 3회까지만
 // 생략(최대 ~1.8s 뒤 강제 검출) — 문턱 아래 미세 변화가 쌓여도 박스가 낡지 못하게 한다
 let _motCnv = null, _motPrev = null, _motSkip = 0, _motRows = null, _motVal = -1;
+let _motLum = 255, _blackN = 0;            // 평균 밝기·연속 블랙 프레임 수 — 블랙아웃 워치독용
 function frameDiff(src) {
   if (!_motCnv) _motCnv = mkCanvas(32, 24);
   const g = _motCnv.getContext('2d', { willReadFrequently: true });
   g.drawImage(src, 0, 0, 32, 24);
   const d = g.getImageData(0, 0, 32, 24).data;
   const cur = new Float32Array(768);
-  let sum = 0;
+  let sum = 0, lum = 0;
   for (let i = 0, j = 0; j < 768; i += 4, j++) {
     cur[j] = (d[i] + d[i+1] + d[i+2]) / 3;
+    lum += cur[j];
     if (_motPrev) sum += Math.abs(cur[j] - _motPrev[j]);
   }
+  _motLum = lum / 768;
   const diff = _motPrev ? sum / 768 : 255;
   _motPrev = cur;
   return diff;
@@ -1224,6 +1226,15 @@ async function toggleLive(analyze = true) {
       fc = mkCanvas(cam.videoWidth, cam.videoHeight);
     fc.getContext('2d').drawImage(cam, 0, 0);
     const skipped = motGate(_motVal = frameDiff(fc)); // 정지 화면이면 검출 생략(직전 박스 재사용 — 결과 동일)
+    // 블랙아웃 워치독: iOS가 재협상·셔터 복귀 후 스트림을 검게 방치하는 잔존 경로(07-25 현장 재발) —
+    // 평균 밝기<5가 8프레임(~4초) 지속되면 회전 수술과 동일한 재획득으로 자가 복구(세션 누적 유지)
+    if (_motLum < 5 && !scanning) {
+      if (++_blackN >= 8) {
+        _blackN = 0; _rotRestart = true;
+        document.getElementById('scan-title').textContent = '🌑 카메라 화면이 검게 멈춰 다시 연결해요…';
+        await toggleLive(false); toggleLive(); break;
+      }
+    } else _blackN = 0;
     let rows;
     if (skipped) rows = _motRows;
     else try { rows = _motRows = await detect(fc, 960); }

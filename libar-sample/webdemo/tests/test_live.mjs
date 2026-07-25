@@ -13,6 +13,14 @@ const shOpen = await page.evaluate(() => _paceRest);
 await page.evaluate(() => setSheet(false));
 await new Promise(r => setTimeout(r, 2000));
 const shClose = await page.evaluate(() => _paceRest);
+// 블랙아웃 워치독: 8프레임만 밝기 0을 강제 — ~4초 뒤 카메라 재획득(세션 유지)으로 자가 복구해야 함
+const wdGen = await page.evaluate(() => { sessionBooks.set('x-테스트', { call: 'x-테스트' });
+  const orig = frameDiff; let n = 0;
+  frameDiff = src => { orig(src); _motLum = ++n <= 8 ? 0 : 128; return 255; };
+  return liveGen; });
+await page.waitForFunction(g => liveGen > g && live, { timeout: 15000 }, wdGen);
+const wd = await page.evaluate(() => ({ live, keep: sessionBooks.has('x-테스트') }));
+await new Promise(r => setTimeout(r, 1500));
 await page.evaluate(() => toggleLive(false));            // 일시정지 (판독 생략)
 await new Promise(r => setTimeout(r, 1000));
 const st2 = await page.evaluate(() => ({ live }));
@@ -24,5 +32,6 @@ assert(st1.rest === (st1.boxes ? 450 : 900), `페이싱 이상: 박스 ${st1.box
 assert(shOpen === -1, `시트 펼침 중 검출 휴면 실패: _paceRest ${shOpen}`);
 assert(shClose > 0, `시트 접은 뒤 재개 실패: _paceRest ${shClose}`);
 assert(!st2.live, '일시정지가 안 먹음');
+assert(wd.live && wd.keep, `블랙 워치독 자가 복구 실패: ${JSON.stringify(wd)} (기대 라이브 재개·세션 유지)`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_live — 검출 ${st1.ms.toFixed(0)}ms/프레임, 휴식 ${st1.rest}ms(박스 ${st1.boxes}) · 시트 휴면/재개 OK · 시작·정지 정상`);
+console.log(`PASS test_live — 검출 ${st1.ms.toFixed(0)}ms/프레임, 휴식 ${st1.rest}ms(박스 ${st1.boxes}) · 시트 휴면/재개 OK · 블랙 워치독 복구 OK · 시작·정지 정상`);
