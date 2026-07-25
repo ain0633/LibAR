@@ -656,7 +656,6 @@ function fitRect(el) {
 
 // AR 오버레이 (사진 위 실좌표 박스) — 도서찾기 대상 책은 📍핀으로 강조
 let findTarget = null;                                 // {call, title} — 길안내에서 설정
-let liveFound = null;                                  // 라이브 자동 판독에서 찾은 위치 {box, until}
 function targetPin(ar, box, s, ox, oy, call) {
   const [x0, y0, x1, y1] = box;
   const hl = document.createElement('div');
@@ -734,14 +733,22 @@ function drawBoxes(img, rows) {
   if (findTarget) {                                    // 정지 화면: 판독 결과에서 찾는 책 짚기
     const hit = rows.find(r => r.call === findTarget.call);
     if (hit) targetPin(ar, hit.box, s, ox, oy, findTarget.call);
-    // 라이브: 직전 자동 판독에서 본 위치를 잠시 유지 (사용자가 카메라를 크게 안 움직였다는 가정)
-    else if (liveFound && Date.now() < liveFound.until)
-      targetPin(ar, liveFound.box, s, ox, oy, findTarget.call);
   }
   if (discMode && !live) {                             // 이용자 탐색: 인기대출·사서추천 도서 하이라이트
     const m = _disc[discMode] || new Map();
     for (const r of rows) if (r.call && m.has(r.call)) discPin(ar, r, s, ox, oy, m.get(r.call));
   }
+}
+// 도서찾기 발견 시 라이브 정지: 라이브 화면 위 핀은 폰을 내리는 순간 엉뚱한 곳(바닥)을 가리킨다 —
+// (07-25 현장 피드백). 찍힌 사진은 좌표가 불변이라 그 위에 핀을 그리고 멈춘다. 재개 = ▶ 버튼(일시정지와 동일)
+function foundStop(hrows) {
+  live = false; liveGen++;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  document.getElementById('btn-live').textContent = '▶ 재개';
+  document.getElementById('still-ov').style.display = 'none';    // 스피너만 내리고 찍힌 사진은 유지
+  drawBoxes(document.getElementById('photo'), hrows);            // live=false + findTarget → 핀만 렌더
+  document.getElementById('scan-title').textContent =
+    `📍 찾는 책이 여기 있어요! — ${(findTarget.title || findTarget.call).slice(0, 14)} (사진 속 위치예요)`;
 }
 
 // ── 이용자 탐색: 서가 화면 위에 도서관 데이터를 겹쳐 보인다 — 정적 동봉 데이터(월 1회 오프라인 갱신,
@@ -1284,11 +1291,8 @@ async function toggleLive(analyze = true) {
           snapReport(hi, hrows);                     // 리포트 재료: 원샷/프레임 복사 저장
           const nMis = [...sessionBooks.values()].filter(b => b.mis && !b.resolved).length;
           const tgt = findTarget && hrows.find(r => r.call === findTarget.call);
-          if (tgt) {                                 // 도서찾기 대상 발견 — 📍핀은 카메라 표시 좌표로 환산
-            const ps = cam.videoWidth / dims(hi).W;
-            liveFound = { box: tgt.box.map(v => v * ps), until: Date.now() + 10000 };
-            readMsg = `📍 찾는 책이 여기 있어요! — ${(findTarget.title || findTarget.call).slice(0, 14)}`;
-            setTimeout(() => readMsg = '', 10000);
+          if (tgt) {                                 // 도서찾기 대상 발견 — 찍힌 사진 위에 핀 찍고 정지
+            foundStop(hrows);
           } else {
             readMsg = `누적 ${sessionBooks.size}권 확인 (+${nNew})${nMis ? ` · ${nMis}권 의심` : ''}`
               + ' — 계속 비추거나 옆 칸으로';

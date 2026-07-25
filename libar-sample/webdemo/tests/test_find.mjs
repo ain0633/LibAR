@@ -37,8 +37,17 @@ const r = await page.evaluate(() => {
   findTarget = { call: ord[j7].call };
   const F = findCandidates([mk(ord[i6].call, 0)]);
   const F_sec = ord[j7].sec;
+  // ⑧ 라이브 발견 정지(foundStop): 라이브를 멈추고 찍힌 사진 위에 핀만 — 스피너 내림·▶재개 복귀
+  findTarget = { call: '673.53-황24ㄷ', title: '다락방 재즈' };
+  live = true;
+  document.getElementById('still-ov').style.display = 'flex';
+  foundStop([mk('673.52-가11ㄱ', 0), mk('673.53-황24ㄷ', 20), mk('674-다33ㄷ', 40)]);
+  const G = { liveOff: !live, ovOff: document.getElementById('still-ov').style.display === 'none',
+              pinN: document.getElementById('ar').children.length,
+              btn: document.getElementById('btn-live').textContent,
+              title: document.getElementById('scan-title').textContent };
   findTarget = null;
-  return { A, B, C, D, arN, E, F, F_sec };
+  return { A, B, C, D, arN, E, F, F_sec, G };
 });
 await browser.close();
 
@@ -50,5 +59,8 @@ assert(r.arN === 1, `찾기 오버레이가 후보만 렌더해야 함: ${r.arN}
 assert(r.E.mode === 'none' && r.E.dir === '오른쪽' && r.E.n === 15 && !r.E.sec,
        `권수 거리: ${JSON.stringify(r.E)} (기대 오른쪽·15권·같은 구간)`);
 assert(r.F.mode === 'none' && r.F.sec === r.F_sec, `구간 리다이렉트: ${JSON.stringify(r.F)} (기대 sec=${r.F_sec})`);
+assert(r.G.liveOff && r.G.ovOff, `발견 정지: 라이브 미종료 또는 스피너 잔존 ${JSON.stringify(r.G)}`);
+assert(r.G.pinN === 1 && r.G.btn === '▶ 재개' && r.G.title.includes('찾는 책이 여기'),
+       `발견 정지 렌더: ${JSON.stringify(r.G)} (기대 핀 1·▶재개·안내 문구)`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_find — 직독 98% · 유일 후보 95% · 2후보 45%씩 · 방향 안내 · 오버레이 후보만 렌더 · 거리 15권 · 구간 리다이렉트`);
+console.log(`PASS test_find — 직독 98% · 유일 후보 95% · 2후보 45%씩 · 방향 안내 · 오버레이 후보만 렌더 · 거리 15권 · 구간 리다이렉트 · 발견 정지 핀`);
