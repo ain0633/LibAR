@@ -59,7 +59,17 @@ const r = await page.evaluate(() => {
   findTarget = null;
   show('scan'); H.shown = !document.getElementById('btn-photocheck').classList.contains('hidden');
   judgeRows(bad); H.flag = bad.some(r => r.mis);
-  return { A, B, C, D, arN, E, F, F_sec, G, H };
+  // ⑩ 행 문맥 게이트: 직독(511.4) 줄의 원거리 폴백(182.2)은 보류, 근거리 폴백·무직독 줄은 유지
+  const rcg = [
+    { band: 0, call: '511.4-가68ㄴ',   how: '청구기호', score: 1.0, box: [0, 0, 10, 20] },
+    { band: 0, call: '182.2-양82ㄴ',   how: '청구기호', score: 0.9, box: [20, 0, 30, 20] },  // 07-25 현장 오탐 재현
+    { band: 0, call: '513.852-에68ㅂ', how: '청구기호', score: 0.9, box: [40, 0, 50, 20] },  // 근거리(±10 안) — 유지
+    { band: 1, call: '327.856-메68ㅂ', how: '청구기호', score: 0.9, box: [0, 30, 10, 50] },  // 직독 없는 줄 — 불변
+  ];
+  const gn = rowContextGate(rcg);
+  const I = { n: gn, drop: rcg[1].call === null && rcg[1].how === null,
+              keepNear: rcg[2].call === '513.852-에68ㅂ', keepNoAnchor: rcg[3].call === '327.856-메68ㅂ' };
+  return { A, B, C, D, arN, E, F, F_sec, G, H, I };
 });
 await browser.close();
 
@@ -78,5 +88,7 @@ assert(r.G.pinAfterResize === 1 && r.G.pinLabel.includes('673.53-황24ㄷ'),
        `resize 후 핀 유실: ${JSON.stringify(r.G)} (기대 핀 1·타깃 라벨 유지)`);
 assert(r.H.hid && r.H.skip, `찾기 모드 축소 실패: ${JSON.stringify(r.H)} (기대 사진점검 숨김·오배열 생략)`);
 assert(r.H.shown && r.H.flag, `찾기 해제 복귀 실패: ${JSON.stringify(r.H)} (기대 버튼 복귀·판정 재개)`);
+assert(r.I.n === 1 && r.I.drop && r.I.keepNear && r.I.keepNoAnchor,
+       `행 문맥 게이트: ${JSON.stringify(r.I)} (기대 원거리 폴백 1건만 보류)`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
 console.log(`PASS test_find — 직독 98% · 유일 후보 95% · 2후보 45%씩 · 방향 안내 · 오버레이 후보만 렌더 · 거리 15권 · 구간 리다이렉트 · 발견 정지 핀`);

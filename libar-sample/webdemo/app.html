@@ -345,7 +345,7 @@ sheet.addEventListener('touchend', e => { if (ty0 === null) return;
   if (dy < -40) setSheet(true); else if (dy > 40) setSheet(false); });
 
 // ── 버전 표기(사용자 요청): 배포할 때마다 아래 두 값만 갱신 — 홈 하단 개발자 정보·브라우저 탭에 표시 ──
-const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 16:45';
+const APP_VER = 'v1.2', APP_UPDATED = '2026-07-25 17:05';
 document.getElementById('app-ver').textContent = `${APP_VER} · ${APP_UPDATED} 업데이트`;
 document.title = `LibAR ${APP_VER} — 서가 스캔`;
 
@@ -597,6 +597,7 @@ async function recognizeAll(img, rows, onMsg) {
     extras.push(...assignTokens(rb, toks, txt => matchCall(txt, recIdx)));
   }
   rows.push(...extras);                                // 클러스터 채널 회수 라벨
+  rowContextGate(rows);
   if (!_risk) _risk = buildRiskGroups(await loadCatalogRaw());
   await titleArbitrate(img, rows);                     // 위험군 한정 선별 제목 대조 (~2% 책만 발동)
   lastRecMs = performance.now() - t0;
@@ -606,6 +607,25 @@ async function recognizeAll(img, rows, onMsg) {
 // 오배열 플래그는 직독(청구기호)만. 찾기 모드(이용자)는 판정 자체를 생략 —
 // 책 찾는 화면에 빨간 경보를 띄우지 않는다 (07-25 사용자 요청)
 function judgeRows(rows) { if (!findTarget) flagMisplaced(rows); }
+// ── 행 문맥 게이트(07-25 현장 확정: 511 서가에서 182.2·327.856 오탐 2건) — 저자 폴백(0.9)은
+// 분류 문맥 없이 전 장서를 뒤지므로, 첫 글자 오독(임→양·에→메)과 겹치면 남의 구간 책을 데려온다.
+// 같은 줄 직독 계열(≥0.95) 분류에서 ±10 넘게 동떨어진 폴백 매칭은 판독 보류(⚪ 다시 확인)로 강등.
+// 트레이드오프: 진짜 원거리 오배열이 '분류 미독+저자 유일'로만 잡히는 희귀 케이스를 잃는다 — 정밀도 우선.
+// (근거리 오독 구제 573.53→673.53류는 매칭 분류가 줄 문맥과 가까워 통과 — 07-14 규약 유지)
+function rowContextGate(rows) {
+  let n = 0;
+  for (const b of new Set(rows.map(r => r.band))) {
+    const seq = rows.filter(r => r.band === b && r.call);
+    const anchors = seq.filter(r => r.score >= 0.95).map(r => sortkey(r.call)[0]);
+    if (!anchors.length) continue;                     // 직독이 하나도 없는 줄은 증거 부족 — 건드리지 않는다
+    for (const r of seq) {
+      if (r.score !== 0.9) continue;
+      const c = sortkey(r.call)[0];
+      if (!anchors.some(a => Math.abs(a - c) < 10)) { r.call = null; r.title = null; r.how = null; n++; }
+    }
+  }
+  return n;
+}
 
 // 공통 스캔 경로: 검출 → (진행 표시) → 인식·대조·판정 → 최종 렌더
 let scanning = false;                                  // 판독 20~30초 — 중복 실행 시 결과 뒤섞임 방지
