@@ -56,7 +56,7 @@ const r = await page.evaluate(async ([popCall, recCall]) => {
 // 도서찾기 탭 경로: 검색/추천/인기 선택지 + 스캔 알림표(pill) 연동
 await page.evaluate(() => { openFind(); });
 await page.waitForFunction('typeof findIdx !== "undefined" && findIdx && findIdx.length > 0', { timeout: 60000, polling: 500 });
-const tabs = await page.evaluate(async () => {
+const tabs = await page.evaluate(async (popCall) => {
   await findTab('pop');
   const popRows = document.getElementById('find-list').children.length;
   const pillOn = !document.getElementById('disc-pill').classList.contains('hidden');
@@ -75,8 +75,18 @@ const tabs = await page.evaluate(async () => {
                      pill: !document.getElementById('disc-pill').classList.contains('hidden'),
                      photoBtnHidden: document.getElementById('btn-photocheck').classList.contains('hidden') };
   setDiscMode(null);
-  return { popRows, pillOn, inputHidden, recRows, ...afterSearch, scanBtn, listScan };
-});
+  // ⑦ 목록에서 한 권 선택(guideSection) → 탐색 배너·discMode 해제 (한 권 찾기 ↔ 전체 핀 배타 — 07-28 "추천사 왜 안 꺼져" 수리)
+  //    + 찾기 핀 팝업에 대출횟수·추천사 곁들임 (07-28 요청)
+  await findTab('pop');
+  guideSection({ call: popCall, title: '테스트', sec: '800번대', room: '3층 종합자료실' });
+  showFindInfo();
+  const pick = { ft: !!findTarget, dm: discMode === null,
+                 pill: document.getElementById('disc-pill').classList.contains('hidden'),
+                 rich: document.getElementById('discPop').textContent.includes('회 대출') };
+  hideDisc();
+  findTarget = null;
+  return { popRows, pillOn, inputHidden, recRows, ...afterSearch, scanBtn, listScan, pick };
+}, popB.call);
 await browser.close();
 
 assert(r.popPins === 1, `인기대출 핀 수: ${r.popPins} (기대 1)`);
@@ -96,5 +106,8 @@ assert(tabs.listScan.view && tabs.listScan.ft && tabs.listScan.dm && tabs.listSc
 assert(r.stop.liveOff && r.stop.ovOff && r.stop.btn === '▶ 재개', `탐색 발견 정지 실패: ${JSON.stringify(r.stop)}`);
 assert(r.stop.pinN >= 1 && r.stop.popup && r.stop.msg.includes('핀을 탭'),
        `탐색 정지 핀·팝업: ${JSON.stringify(r.stop)} (기대 핀 1+·팝업 열림·안내 문구)`);
+assert(tabs.pick.ft && tabs.pick.dm && tabs.pick.pill,
+       `한 권 선택 후 탐색 잔존: ${JSON.stringify(tabs.pick)} (기대 findTarget有·discMode無·pill 숨김)`);
+assert(tabs.pick.rich, `찾기 핀 팝업 대출횟수 곁들임 부재: ${JSON.stringify(tabs.pick)}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · ⭐핀·추천사 · 전환·해제 · 발견 정지 핀·팝업 · 찾기 탭(pop ${tabs.popRows}·rec ${tabs.recRows}행)·pill 연동 OK`);
+console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · 전환·해제 · 발견 정지 핀·팝업 · 한권선택 시 탐색 해제 · 찾기 탭(pop ${tabs.popRows}·rec ${tabs.recRows}행)·pill 연동 OK`);
