@@ -51,6 +51,11 @@ const r = await page.evaluate(() => {
   dispatchEvent(new Event('resize'));                           // 주소창 개폐 시뮬레이션
   G.pinAfterResize = document.getElementById('ar').children.length;
   G.pinLabel = document.getElementById('ar').children[0]?.textContent || '';
+  // 찾기 핀 탭 → 서지 팝업 (07-28: 탐색 핀과 동일 경험)
+  document.getElementById('ar').children[0]?.click();
+  const fp = document.getElementById('discPop');
+  G.pinTap = fp.style.display === 'block' && fp.textContent.includes('다락방 재즈');
+  hideDisc();
   // ⑨ 찾기 모드: 사서용 사진 점검 버튼 숨김 + 오배열 판정 생략 / 해제 시 둘 다 복귀
   show('scan');
   const H = { hid: document.getElementById('btn-photocheck').classList.contains('hidden') };
@@ -86,6 +91,7 @@ assert(r.G.pinN === 1 && r.G.btn === '▶ 재개' && r.G.title.includes('찾는 
        `발견 정지 렌더: ${JSON.stringify(r.G)} (기대 핀 1·▶재개·안내 문구)`);
 assert(r.G.pinAfterResize === 1 && r.G.pinLabel.includes('673.53-황24ㄷ'),
        `resize 후 핀 유실: ${JSON.stringify(r.G)} (기대 핀 1·타깃 라벨 유지)`);
+assert(r.G.pinTap, `찾기 핀 탭 서지 팝업 실패: ${JSON.stringify(r.G)}`);
 assert(r.H.hid && r.H.skip, `찾기 모드 축소 실패: ${JSON.stringify(r.H)} (기대 사진점검 숨김·오배열 생략)`);
 assert(r.H.shown && r.H.flag, `찾기 해제 복귀 실패: ${JSON.stringify(r.H)} (기대 버튼 복귀·판정 재개)`);
 assert(r.I.n === 1 && r.I.drop && r.I.keepNear && r.I.keepNoAnchor,
