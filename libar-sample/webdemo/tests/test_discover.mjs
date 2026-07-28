@@ -38,7 +38,20 @@ const r = await page.evaluate(async ([popCall, recCall]) => {
   await toggleDisc('rec');                              // 끄기
   const offPins = pins().length;
   const offPop = document.getElementById('discPop').style.display === 'none';
-  return { popPins, popTitleMsg, popShown, popText, recPins, recText, offPins, offPop };
+  // ⑤ 라이브 발견 정지(discStop): 자동판독에서 탐색 도서를 찾으면 정지 화면 전환 + 탭 가능 핀
+  //    (라이브 박스엔 식별이 없어 핀을 걸 수 없다 — 07-28 "핀 탭해도 팝업 안 뜸" 수리)
+  await toggleDisc('pop');
+  live = true;
+  document.getElementById('still-ov').style.display = 'flex';
+  discStop(lastRows, 1);
+  const stop = { liveOff: !live, ovOff: document.getElementById('still-ov').style.display === 'none',
+                 btn: document.getElementById('btn-live').textContent,
+                 msg: document.getElementById('scan-title').textContent,
+                 pinN: pins().length };
+  pins()[0]?.click();
+  stop.popup = document.getElementById('discPop').style.display === 'block';
+  await toggleDisc('pop');                              // 정리
+  return { popPins, popTitleMsg, popShown, popText, recPins, recText, offPins, offPop, stop };
 }, [popB.call, recB.call]);
 // 도서찾기 탭 경로: 검색/추천/인기 선택지 + 스캔 알림표(pill) 연동
 await page.evaluate(() => { openFind(); });
@@ -68,5 +81,8 @@ assert(r.offPins === 0 && r.offPop, `해제 후 잔존: 핀 ${r.offPins}, 팝업
 assert(tabs.popRows > 10 && tabs.recRows > 10, `탭 목록 부족: pop ${tabs.popRows} rec ${tabs.recRows}`);
 assert(tabs.pillOn && tabs.inputHidden, `인기 탭 상태: pill ${tabs.pillOn}, 검색창 숨김 ${tabs.inputHidden}`);
 assert(tabs.pillOff && tabs.discOff, `검색 탭 복귀 후 해제 실패: pill숨김 ${tabs.pillOff}, disc ${tabs.discOff}`);
+assert(r.stop.liveOff && r.stop.ovOff && r.stop.btn === '▶ 재개', `탐색 발견 정지 실패: ${JSON.stringify(r.stop)}`);
+assert(r.stop.pinN >= 1 && r.stop.popup && r.stop.msg.includes('핀을 탭'),
+       `탐색 정지 핀·팝업: ${JSON.stringify(r.stop)} (기대 핀 1+·팝업 열림·안내 문구)`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · ⭐핀·추천사 · 전환·해제 · 찾기 탭(pop ${tabs.popRows}·rec ${tabs.recRows}행)·pill 연동 OK`);
+console.log(`PASS test_discover — 🔥핀·서지·대출횟수 · ⭐핀·추천사 · 전환·해제 · 발견 정지 핀·팝업 · 찾기 탭(pop ${tabs.popRows}·rec ${tabs.recRows}행)·pill 연동 OK`);
