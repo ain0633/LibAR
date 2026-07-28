@@ -2,12 +2,18 @@
 //   ③회수 책은 how='제목'·오배열 플래그 불참 ④직독 확인 권수 무손실(회수는 더하기만)
 import { openApp, assert } from './util.mjs';
 
-// 기본 주소: 플래그 꺼짐 = 전 버전 그대로 (광수쌤 롤백 경로)
+// 기본화(07-28 승인): 기본 주소 = v1.3 켜짐 · #nodual = v1.2 동작 롤백 스위치
 {
   const { browser, page } = await openApp();
+  const on = await page.evaluate(() => ({ ver: APP_VER, on: _dualOn }));
+  await browser.close();
+  assert(on.on && on.ver === 'v1.3', `기본 주소가 v1.3이 아님: ${JSON.stringify(on)}`);
+}
+{
+  const { browser, page } = await openApp({ hash: '#nodual' });
   const off = await page.evaluate(() => ({ ver: APP_VER, on: _dualOn }));
   await browser.close();
-  assert(!off.on && off.ver === 'v1.2', `기본 주소가 v1.2가 아님: ${JSON.stringify(off)}`);
+  assert(!off.on && off.ver === 'v1.2', `#nodual 롤백 스위치 불량: ${JSON.stringify(off)}`);
 }
 
 // #dual + 샘플 판독 E2E: 발동·회수·판정 격리 확인
@@ -41,4 +47,4 @@ assert(st.n > 0 && st.n <= 20, `이중인식 미발동 또는 상한 초과: 발
 assert(st.titleRows.every(r => !r.mis), `제목 회수 책이 오배열 플래그됨: ${JSON.stringify(st.titleRows)}`);
 assert(disp.boxSky && disp.boxGreen && disp.badge, `제목 회수 구분 표시 실패: ${JSON.stringify(disp)}`);
 assert(errs.length === 0, `페이지 오류: ${errs}`);
-console.log(`PASS test_dual — 기본=v1.2 미발동 · #dual=v1.3 발동 ${st.n}건·회수 ${st.hit}건·${st.ms}ms · 확인 ${out.ok}권 유지 · 제목 회수 플래그 0 · 하늘색 박스/뱃지 OK`);
+console.log(`PASS test_dual — 기본=v1.3 켜짐·#nodual=v1.2 롤백 · 발동 ${st.n}건·회수 ${st.hit}건·${st.ms}ms · 확인 ${out.ok}권 유지 · 제목 회수 플래그 0 · 하늘색 박스/뱃지 OK`);
