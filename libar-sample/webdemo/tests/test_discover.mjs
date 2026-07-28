@@ -64,9 +64,18 @@ const tabs = await page.evaluate(async () => {
   await findTab('rec');
   const recRows = document.getElementById('find-list').children.length;
   await findTab('search');
-  return { popRows, pillOn, inputHidden, recRows,
-           pillOff: document.getElementById('disc-pill').classList.contains('hidden'),
-           discOff: discMode === null };
+  const afterSearch = { pillOff: document.getElementById('disc-pill').classList.contains('hidden'),
+                        discOff: discMode === null };
+  // ⑥ A안(목록 스캔): 배너 버튼 → 특정 책 지정 없이 discMode 유지 채 스캔 진입 = 전체 핀 모드의 진입점
+  await findTab('pop');
+  const scanBtn = !!document.querySelector('#find-list button');
+  discScan();
+  const listScan = { view: document.getElementById('view-scan').classList.contains('active'),
+                     ft: findTarget === null, dm: discMode === 'pop',
+                     pill: !document.getElementById('disc-pill').classList.contains('hidden'),
+                     photoBtnHidden: document.getElementById('btn-photocheck').classList.contains('hidden') };
+  setDiscMode(null);
+  return { popRows, pillOn, inputHidden, recRows, ...afterSearch, scanBtn, listScan };
 });
 await browser.close();
 
@@ -81,6 +90,9 @@ assert(r.offPins === 0 && r.offPop, `해제 후 잔존: 핀 ${r.offPins}, 팝업
 assert(tabs.popRows > 10 && tabs.recRows > 10, `탭 목록 부족: pop ${tabs.popRows} rec ${tabs.recRows}`);
 assert(tabs.pillOn && tabs.inputHidden, `인기 탭 상태: pill ${tabs.pillOn}, 검색창 숨김 ${tabs.inputHidden}`);
 assert(tabs.pillOff && tabs.discOff, `검색 탭 복귀 후 해제 실패: pill숨김 ${tabs.pillOff}, disc ${tabs.discOff}`);
+assert(tabs.scanBtn, '목록 스캔 버튼(A안) 부재');
+assert(tabs.listScan.view && tabs.listScan.ft && tabs.listScan.dm && tabs.listScan.pill && tabs.listScan.photoBtnHidden,
+       `목록 스캔 진입 상태: ${JSON.stringify(tabs.listScan)} (기대 스캔뷰·findTarget無·discMode 유지·pill·사서버튼 숨김)`);
 assert(r.stop.liveOff && r.stop.ovOff && r.stop.btn === '▶ 재개', `탐색 발견 정지 실패: ${JSON.stringify(r.stop)}`);
 assert(r.stop.pinN >= 1 && r.stop.popup && r.stop.msg.includes('핀을 탭'),
        `탐색 정지 핀·팝업: ${JSON.stringify(r.stop)} (기대 핀 1+·팝업 열림·안내 문구)`);
