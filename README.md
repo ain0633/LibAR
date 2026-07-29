@@ -1,7 +1,7 @@
 # LibAR — 스마트폰 카메라로 서가를 읽는 온디바이스 AI
 
 <p align="center">
-  <img src="libar-sample/팀공유리포트/리포트예시_판독14권.jpg" alt="LibAR 판독 화면 — 사진 한 장에서 14권 확인" width="640">
+  <img src="libar-sample/팀공유리포트/260723_현장/PC진단_사무실서가_확인35_오배열1.jpg" alt="LibAR 서가 점검 리포트 — 확인 35권, 잘못 꽂힌 책 1권 감지" width="640">
 </p>
 
 <p align="center">
