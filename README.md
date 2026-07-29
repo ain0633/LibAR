@@ -12,18 +12,21 @@
 서가를 비추면 AI가 책등의 청구기호를 읽고 장서목록과 대조합니다.
 **사서에게는 잘못 꽂힌 책(🔴)을, 이용자에게는 찾는 책(📍)과 추천·인기 도서(⭐🔥)를** 눈앞의 서가 위에 바로 표시합니다.
 
+> **English TL;DR** — LibAR reads book-spine call numbers from a phone camera and cross-checks them against the library catalog, entirely on-device (YOLO detection + OCR + fuzzy matching + LIS ordering, via ONNX Runtime Web / WebGPU). It flags misshelved books for librarians and pins searched/recommended books for patrons. Field-validated at a public library over 8 weeks: 99% reading accuracy (officially graded), 100% shelf-position inference (273/273), zero server cost. [Live demo](https://ainsof.dev/libar-demo/) — no install.
+
 > 2026 도서관 데이터 활용 공모전 출품작 · 실증: 영등포구립 대림도서관 (현직 사서와 8주 협업)
 
-## 핵심 수치 (전부 실측)
+## 핵심 수치 (전부 실측 — 각 수치의 측정 코드·원본 증거 링크)
 
-| 항목 | 결과 |
-| :--- | :--- |
-| 판독 정확도 (서가를 걸으며 스캔) | **99%** (86/87권, 공식 채점) |
-| 확인 판정 정답률 | 97% |
-| 도서 위치 추정 (도서찾기) | **100%** (273건 전건 적중) |
-| 사진 1장 점검 속도 | 16권 / 약 8초 |
-| 대조 장서 | 20,944권 (실증관 전 장서) |
-| 서버·장비 비용 | **0원** (정적 호스팅 + 온디바이스 추론) |
+| 항목 | 결과 | 근거 |
+| :--- | :--- | :--- |
+| 판독 정확도 (서가를 걸으며 스캔) | **99%** (86/87권) | [공식 채점기 walk_grade.py](libar-sample/walk_grade.py) — 정답지 87권 대조 |
+| 확인 판정 정답률 | 97% | 같은 채점기 · [개발일지의 측정 기록](libar-sample/팀공유리포트/개발일지_아카이브_260720시점.md) |
+| 도서 위치 추정 (도서찾기) | **100%** (273건 전건 적중) | [검증 스크립트 order_infer_validate.py](libar-sample/order_infer_validate.py) — LOO 정밀도 |
+| 사진 1장 점검 속도 | 16권 / 약 8초 | [현장 점검 리포트 원본 (260723)](libar-sample/팀공유리포트/260723_현장/) — 앱이 생성한 실물 |
+| Python↔JS 판정 일치 | 골든 파리티 144/144 | [배포 게이트 17종](libar-sample/webdemo/tests/run_all.mjs) · [골든 생성기](libar-sample/webdemo/make_golden.py) |
+| 대조 장서 | 20,944권 (실증관 전 장서) | [카탈로그 빌더 make_catalog.py](libar-sample/make_catalog.py) |
+| 서버·장비 비용 | **0원** | 정적 호스팅 + 온디바이스 추론 (아키텍처 참조) |
 
 ## 무엇이 다른가
 
@@ -56,7 +59,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | 라벨 검출 | Ultralytics YOLO26n → ONNX (4.5MB) | 실증관 사진 7,000여 박스 자체 구축·전이학습 |
 | 문자 인식 | PaddleOCR korean PP-OCRv5 → ONNX fp16 (48MB) | 실측 라벨 702줄+합성 데이터 파인튜닝, 압축 손실 0 검증 |
-| 실행 환경 | ONNX Runtime Web (WebGPU / WASM 자동 폴백) | 단일 HTML SPA, 설치·서버 없음 |
+| 실행 환경 | ONNX Runtime Web (WebGPU / WASM 자동 폴백) | 단일 HTML SPA — 무설치·정적 배포·오프라인 동작을 위한 의도적 선택. 판정 논리는 libar_rec.js로 분리해 Python과 골든 파리티로 품질 보증 |
 | 판정 논리 | 퍼지 매칭 + 제목 이중인식 + LIS + 행 문맥 검증 | Python↔JS 골든 파리티 144/144 |
 | 품질 게이트 | 자동 검사 17종 (`webdemo/tests/run_all.mjs`) | 전부 PASS여야 배포 — 새 경로엔 테스트 동승 규칙 |
 
@@ -74,7 +77,7 @@ flowchart LR
 | :--- | :--- |
 | [`libar-sample/webdemo/`](libar-sample/webdemo/) | **서비스 본체** — 온디바이스 웹앱(app.html), 판정 모듈(libar_rec.js), 배포 게이트 17종(tests/) |
 | [`libar-sample/팀공유리포트/`](libar-sample/팀공유리포트/) | 실증 리포트·회고·현장 사진 (개발 서사) |
-| `libar-sample/*.py, *.ipynb` | 모델 학습·평가·실험 스크립트 (연구 트랙) |
+| [`libar-sample/README.md`](libar-sample/README.md) | **연구 트랙 지도** — 데이터 구축→학습→평가 파이프라인, 실험 계보(채택/기각)와 각 근거 스크립트 |
 | [`Library_AR_Book_Detection_PRD.md`](Library_AR_Book_Detection_PRD.md) | 제품 요구사항 정의서 |
 | `scripts/` | 원고 생성 등 보조 도구 |
 | [ain0633/libar-demo](https://github.com/ain0633/libar-demo) | 공개 데모 배포본 (GitHub Pages) |
@@ -88,4 +91,4 @@ flowchart LR
 
 ---
 
-라이선스·데이터: 장서 데이터는 실증 도서관 제공분이며, 모델·코드의 외부 사용은 문의 바랍니다.
+라이선스: [LICENSE](LICENSE) 참조 (All rights reserved — 공모전 출품작). 장서 데이터는 실증 도서관 제공분으로 저장소에 포함하지 않습니다.
