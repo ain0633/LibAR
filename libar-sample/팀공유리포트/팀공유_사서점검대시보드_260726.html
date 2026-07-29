@@ -1,0 +1,30 @@
+<!doctype html><html lang=ko><meta charset=utf-8>
+<title>LibAR 점검 대시보드</title>
+<style>
+ body{background:#141a14;color:#e8f0e6;font:14px/1.6 'Malgun Gothic',sans-serif;max-width:860px;margin:24px auto;padding:0 16px}
+ h1{font-size:20px} h2{font-size:15px;margin:28px 0 8px;color:#9fb39c}
+ .kpi{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi div{flex:1;min-width:120px;background:#1d241d;border:1px solid #2a332a;border-radius:12px;padding:12px;text-align:center}
+ .kpi b{display:block;font-size:26px} .kpi span{font-size:12px;color:#9fb39c}
+ .kpi .red b{color:#ff6b64} .kpi .green b{color:#4be277}
+ table{width:100%;border-collapse:collapse} td{padding:4px 8px;border-bottom:1px solid #222b22;vertical-align:top}
+ td:first-child,td:last-child{white-space:nowrap}
+ .bar{width:45%} .bar div{background:#4be277;height:10px;border-radius:5px;min-width:2px}
+ .num{text-align:right;white-space:nowrap} .red{color:#ff6b64} .mono{font-family:Consolas,monospace;font-size:12px}
+ footer{margin:32px 0;color:#5a675a;font-size:12px}
+</style>
+<h1>📚 LibAR 서가 점검 대시보드</h1>
+<div class=kpi>
+ <div class=green><b>254</b><span>확인 권수(연)</span></div>
+ <div><b>10</b><span>점검 사진</span></div>
+ <div class=red><b>12</b><span>오배열 플래그</span></div>
+ <div class=green><b>0</b><span>조치 완료</span></div>
+</div>
+<h2>분류대별 점검량 · <span class=red>오배열</span></h2><table><tr><td>000</td><td class='bar'><div style='width:43%'></div></td><td class='num'>52</td><td class='num red'>1</td></tr><tr><td>300</td><td class='bar'><div style='width:100%'></div></td><td class='num'>122</td><td class='num red'>6</td></tr><tr><td>800</td><td class='bar'><div style='width:22%'></div></td><td class='num'>27</td><td class='num red'>2</td></tr><tr><td>900</td><td class='bar'><div style='width:43%'></div></td><td class='num'>53</td><td class='num red'>3</td></tr></table>
+<h2>일자별 점검량 · <span class=red>오배열</span></h2><table><tr><td>2026-07-23</td><td class='bar'><div style='width:45%'></div></td><td class='num'>79</td><td class='num red'>3</td></tr><tr><td>2026-07-24</td><td class='bar'><div style='width:100%'></div></td><td class='num'>175</td><td class='num red'>9</td></tr></table>
+<h2>오배열 책 목록</h2>
+<table><tr><td>일자</td><td>청구기호</td><td>서명</td><td>조치</td></tr><tr><td>2026-07-24</td><td class='mono'>813.6-이66ㅁ-v.1</td><td>무법자:. 1</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>331.18-보297ㅈ</td><td>존중력 연습 :</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>331.18-길294ㅎ</td><td>흥미로운 사람은 뭐가 다를까</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>331.5412-크295ㅇ</td><td>AI 지도책  : 세계의 부와 권력을 재편하는 인공지능의 실체</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>381.30912-글298ㅈ-1</td><td>(일러스트로 보는) 중국 복식 문화와 역사. 1, 하·상·주부터 송나라까지</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>379.4-정57ㅇ</td><td>어느날 갑자기 가해자 엄마가 되었습니다  = Suddenly I became a mother of perpetrator one day  : 학교폭력의 터널을 지나온 엄마의 조심스런 고백</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>981.102-유95ㄱ-2</td><td>국토박물관 순례. 2, 백제, 신라, 그리고 비화가야</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>981.102-유64다</td><td>당일치기 낭만여행  : 가슴이 탁 트이는 수도권 베스트 코스</td><td>미조치</td></tr><tr><td>2026-07-24</td><td class='mono'>981.102-깁32ㅋ</td><td>코리안 오디세이  : 거친 바다를 건너 한국의 섬을 여행하다</td><td>미조치</td></tr><tr><td>2026-07-23</td><td class='mono'>325.555-김94ㄷ</td><td>디지털트랜스포메이션 시대의 디지털마케팅 커뮤니케이션 전략  = Digital transformation  : 플랫폼 · 미디어 · 커뮤니케이션 변화에 따른 디지털마케팅 실무 활용서</td><td>미조치</td></tr><tr><td>2026-07-23</td><td class='mono'>843.6-하27ㅈ</td><td>잠 못 드는 밤</td><td>미조치</td></tr><tr><td>2026-07-23</td><td class='mono'>005.118-홍892ㅋ</td><td>코딩 자율학습 스프링 부트 3 자바 백엔드 개발 입문  = Introduction to Java backend development with spring boot 3  : 만들면서 배우는 친절한 백엔드 개발 자습서</td><td>미조치</td></tr></table>
+<h2>점검 세션 (최신순)</h2>
+<table><tr><td>일시(UTC)</td><td>리포트</td><td class=num>권</td><td class=num>플래그</td></tr><tr><td>2026-07-24 09:50</td><td class='mono'>libar_report_1784886633151.zip·single</td><td class='num'>16</td><td class='num red'>1</td></tr><tr><td>2026-07-24 09:48</td><td class='mono'>libar_report_1784886483456.zip·single</td><td class='num'>30</td><td class='num red'>2</td></tr><tr><td>2026-07-24 09:46</td><td class='mono'>libar_report_1784886380638.zip·report_2.jpg</td><td class='num'>30</td><td class='num red'>1</td></tr><tr><td>2026-07-24 09:45</td><td class='mono'>libar_report_1784886326505.zip·report_1.jpg</td><td class='num'>46</td><td class='num red'>2</td></tr><tr><td>2026-07-24 09:43</td><td class='mono'>libar_report_1784886248692.zip·report_2.jpg</td><td class='num'>31</td><td class='num red'>3</td></tr><tr><td>2026-07-24 09:42</td><td class='mono'>libar_report_1784886165345.zip·report_1.jpg</td><td class='num'>22</td><td class='num red'></td></tr><tr><td>2026-07-23 06:44</td><td class='mono'>libar_report_1784789096667.zip·single</td><td class='num'>16</td><td class='num red'>1</td></tr><tr><td>2026-07-23 06:42</td><td class='mono'>libar_report_1784788951998.zip·single</td><td class='num'>11</td><td class='num red'>1</td></tr><tr><td>2026-07-23 06:38</td><td class='mono'>libar_report_1784788716527.zip·single</td><td class='num'>29</td><td class='num red'></td></tr><tr><td>2026-07-23 06:36</td><td class='mono'>libar_report_1784788597859.zip·single</td><td class='num'>23</td><td class='num red'>1</td></tr></table>
+<footer>리포트 zip 11개 적재 · 중복 내보내기 3장 제거 · 생성기 dash_build.py — 전 과정 오프라인</footer>
+</html>
