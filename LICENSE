@@ -1,0 +1,17 @@
+LibAR — All Rights Reserved
+
+Copyright (c) 2026 Ain Lee (ain0633)
+
+본 저장소의 코드·문서·이미지·리포트는 2026 도서관 데이터 활용 공모전 출품작의
+일부로, 열람 및 참고 목적으로만 공개됩니다. 저작권자의 사전 서면 동의 없이
+복제·수정·재배포·상업적 이용을 할 수 없습니다.
+
+This repository (code, documents, images, and reports) is published for
+viewing and reference only, as part of a library-data contest submission.
+No permission is granted to copy, modify, redistribute, or use it
+commercially without prior written consent from the copyright holder.
+
+Third-party components (Ultralytics YOLO, PaddleOCR, ONNX Runtime Web)
+remain under their respective licenses.
+
+Contact: leeaingm0633@gmail.com
