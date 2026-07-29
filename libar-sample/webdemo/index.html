@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LibAR — 온디바이스 검출 데모</title>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort.min.js"></script>
+<style>
+/* Stitch 디자인 시스템 "LibAR Professional" 축약판 */
+:root { --bg:#0b1326; --card:#171f33; --line:#2d3449; --fg:#dae2fd; --green:#22c55e; --red:#ef4444; --dim:#94a3b8; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font-family:'Malgun Gothic',sans-serif; padding:16px; max-width:900px; margin:0 auto; }
+h1 { font-size:1.3em; } h1 .v { color:var(--green); }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin:10px 0; }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.chip { background:rgba(34,197,94,.15); color:var(--green); border:1px solid rgba(34,197,94,.4); border-radius:4px; padding:4px 10px; font-size:.85em; }
+.chip.dim { background:rgba(148,163,184,.12); color:var(--dim); border-color:var(--line); }
+button, input[type=file]::file-selector-button { background:var(--green); color:#003915; border:0; border-radius:6px; padding:10px 18px; font-weight:700; cursor:pointer; font-size:1em; }
+#stat { font-family:Consolas,monospace; font-size:.9em; color:var(--dim); white-space:pre-line; }
+canvas { width:100%; border:1px solid var(--line); border-radius:6px; margin-top:10px; }
+footer { color:var(--dim); font-size:.8em; margin-top:14px; border-top:1px solid var(--line); padding-top:8px; }
+</style>
+</head>
+<body>
+<h1>📚 LibAR <span class="v">온디바이스 검출 데모</span></h1>
+<div class="card">
+  <div class="row">
+    <input type="file" id="file" accept="image/*">
+    <span class="chip">검출 모델: call_label_yolo3 (ONNX)</span>
+    <span class="chip dim" id="backend">백엔드: -</span>
+  </div>
+  <div id="stat">모델 로딩 중… (첫 로드만 몇 초 걸립니다. 이후 캐시)</div>
+  <canvas id="cv" width="16" height="9"></canvas>
+</div>
+<footer>모든 처리는 이 브라우저 안에서 이루어집니다 — 서버 전송 없음 · LibAR M5 데모 · 2026 도서관 데이터 활용 공모전</footer>
+<script>
+const SZ = 1280, CONF = 0.25;
+let sess = null;
+const stat = t => document.getElementById('stat').textContent = t;
+
+(async () => {
+  try {
+    // wasm 우선(모든 폰 브라우저 동작), webgpu 가능하면 자동 승격
+    const eps = navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'];
+    sess = await ort.InferenceSession.create('../call_label_yolo3/best.onnx', { executionProviders: eps });
+    document.getElementById('backend').textContent = '백엔드: ' + (navigator.gpu ? 'WebGPU/WASM' : 'WASM');
+    stat('모델 준비 완료 — 서가 사진을 선택하세요');
+  } catch (e) { stat('모델 로드 실패: ' + e.message + '\n(로컬 서버로 여세요: py -3.12 -m http.server)'); }
+})();
+
+document.getElementById('file').onchange = async ev => {
+  const f = ev.target.files[0];
+  if (!f || !sess) return;
+  const img = new Image();
+  img.src = URL.createObjectURL(f);
+  await img.decode();
+  const W = img.naturalWidth, H = img.naturalHeight, r = SZ / Math.max(W, H);
+
+  // 레터박스 1280 (파이썬 파이프라인과 동일 전처리)
+  const off = new OffscreenCanvas(SZ, SZ), ox = off.getContext('2d');
+  ox.fillStyle = 'rgb(114,114,114)'; ox.fillRect(0, 0, SZ, SZ);
+  ox.drawImage(img, 0, 0, W * r, H * r);
+  const px = ox.getImageData(0, 0, SZ, SZ).data;
+  const x = new Float32Array(3 * SZ * SZ);
+  for (let i = 0, n = SZ * SZ; i < n; i++) {           // HWC uint8 → CHW float RGB/255
+    x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255;
+  }
+
+  stat('검출 중…');
+  const t0 = performance.now();
+  const out = await sess.run({ images: new ort.Tensor('float32', x, [1, 3, SZ, SZ]) });
+  const ms = performance.now() - t0;
+  const d = out[Object.keys(out)[0]].data;             // (1,300,6): x0,y0,x1,y1,conf,cls — NMS-free end2end
+
+  const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  cx.drawImage(img, 0, 0);
+  let n = 0;
+  cx.lineWidth = Math.max(2, W / 600); cx.strokeStyle = '#22c55e';
+  for (let i = 0; i < d.length; i += 6) {
+    if (d[i + 4] < CONF) continue;
+    cx.strokeRect(d[i] / r, d[i + 1] / r, (d[i + 2] - d[i]) / r, (d[i + 3] - d[i + 1]) / r);
+    n++;
+  }
+  stat(`라벨 ${n}개 검출 · ${ms.toFixed(0)}ms · ${W}×${H}\n다음 단계: 인식(rec ONNX)·장서 대조 → 오배열 AR`);
+};
+</script>
+</body>
+</html>

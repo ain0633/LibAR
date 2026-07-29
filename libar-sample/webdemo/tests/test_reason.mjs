@@ -1,0 +1,74 @@
+// 오배열 근거 팝업 경로: ①근거 계산(물리 이웃 vs 올바른 자리) ②팝업 표시/닫기
+//   합성 밴드로 결정적 검증 — 데모 사진의 오배열 유무에 의존하지 않는다.
+import { openApp, assert } from './util.mjs';
+
+const { browser, page, errs } = await openApp();
+await page.evaluate(async () => { await sessReady; });
+
+const r = await page.evaluate(() => {
+  // 물리 순서(x): 005.1 → 005.5 → 005.2 → 005.3  ⇒ 005.5 하나만 오배열(LIS 밖)
+  const mk = (call, x) => ({ band: 0, call, how: '청구기호', title: '', box: [x, 0, x + 10, 10] });
+  const rows = [mk('005.1-가1', 0), mk('005.5-나2', 20), mk('005.2-다3', 40), mk('005.3-라4', 60)];
+  flagMisplaced(rows);
+  const mis = rows.filter(x => x.mis).map(x => x.call);
+  const bad = rows.find(x => x.mis);
+  const reason = misplaceReason(bad, rows);
+  showReason(bad, rows);
+  const pop = document.getElementById('reasonPop');
+  const shown = pop && pop.style.display === 'block' && pop.textContent.includes(bad.call);
+  hideReason();
+  const hidden = pop.style.display === 'none';
+  // 조치 완료 체크: 시트 렌더 → 완료 → 카운터 0·완료 표시 (합성 캔버스를 판독 이미지로)
+  lastImg = mkCanvas(100, 20);
+  fillSheet(lastImg, rows);
+  const misBefore = document.getElementById('c-mis').textContent;
+  resolveMis(bad);
+  const misAfter = document.getElementById('c-mis').textContent;
+  const doneShown = document.getElementById('list-mis').textContent.includes('재배열 완료');
+  // "다시 확인" 중복 박스 병합: 확인책과 겹친 미판독 1(제외) + 서로 겹친 미판독 2(1권) + 독립 1 → 2권
+  const rows2 = [
+    { band: 0, call: '005.1-가1', how: '청구기호', box: [0, 0, 10, 10] },
+    { band: 0, call: null, box: [2, 0, 12, 10] },
+    { band: 0, call: null, box: [30, 0, 40, 10] },
+    { band: 0, call: null, box: [33, 0, 43, 10] },
+    { band: 0, call: null, box: [60, 0, 70, 10] },
+  ];
+  fillSheet(lastImg, rows2);
+  const grayN = document.getElementById('c-gray').textContent;
+  // 라이브 병합 시트 회귀(7/23 현장 크래시): sessionBooks 누적분(band·box·thumbData 동승) + 현재 프레임
+  // 미판독을 합친 rows로 fillSheet — box 없는 구형 누적분이 섞여도 sameBook 좌표 접근에서 죽지 않아야 함
+  const mergedRows = [
+    { call: '005.1-가1', title: 'ㄱ', mis: false, band: 0, box: [0, 0, 10, 10] },
+    { call: '005.9-구1', title: 'ㄴ', mis: false, thumbData: 'data:,' },   // 구버전 누적분(box 없음) — 가드 검증
+    { band: 0, call: null, box: [2, 0, 12, 10] },
+    { band: 0, call: null, box: [60, 0, 70, 10] },
+  ];
+  let mergedErr = null;
+  try { fillSheet(lastImg, mergedRows); } catch (e) { mergedErr = String(e); }
+  const mergedGray = document.getElementById('c-gray').textContent;
+  // 판독 불가 안내 카드 표시/닫기
+  showNoRead('photo');
+  const nr = document.getElementById('noReadPop');
+  const nrShown = nr && nr.style.display === 'block' && nr.textContent.includes('못 읽었어요');
+  hideNoRead();
+  const nrHidden = nr.style.display === 'none';
+  return { mis, reason, shown, hidden, misBefore, misAfter, doneShown, grayN, mergedErr, mergedGray, nrShown, nrHidden };
+});
+await browser.close();
+
+assert(r.mis.length === 1 && r.mis[0] === '005.5-나2', `LIS 오배열 특정 실패: ${JSON.stringify(r.mis)}`);
+assert(r.reason.phys.left === '005.1-가1' && r.reason.phys.right === '005.2-다3',
+  `물리 이웃 오류: ${JSON.stringify(r.reason.phys)}`);
+// 005.5는 정상 배열(005.1/005.2/005.3)의 맨 뒤에 와야 함 → 왼쪽 005.3, 오른쪽 서가 끝(null)
+assert(r.reason.exp.left === '005.3-라4' && r.reason.exp.right === null,
+  `올바른 자리 오류: ${JSON.stringify(r.reason.exp)}`);
+assert(r.shown, '근거 팝업이 표시되지 않음');
+assert(r.hidden, '근거 팝업 닫기 실패');
+assert(r.misBefore === '1' && r.misAfter === '0', `조치 체크 카운터: ${r.misBefore}→${r.misAfter} (기대 1→0)`);
+assert(r.doneShown, '완료 항목이 시트에 표시되지 않음');
+assert(r.grayN === '2', `다시 확인 중복 병합: ${r.grayN} (기대 2 — 확인책 겹침 제외·중복쌍 병합·독립 유지)`);
+assert(r.mergedErr === null, `라이브 병합 시트 크래시 재발: ${r.mergedErr}`);
+assert(r.mergedGray === '1', `병합 시트 다시확인 수: ${r.mergedGray} (기대 1 — 확인책 겹침 1 제외·독립 1)`);
+assert(r.nrShown && r.nrHidden, `판독불가 카드 표시/닫기 실패: ${r.nrShown}/${r.nrHidden}`);
+assert(errs.length === 0, `페이지 오류: ${errs}`);
+console.log(`PASS test_reason — 오배열 ${r.mis[0]} · 근거(${r.reason.phys.left}↔${r.reason.phys.right} → ${r.reason.exp.left}↔끝) · 조치 1→0 · 다시확인 병합 2 · 판독불가 카드 OK`);

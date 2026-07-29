@@ -48,8 +48,21 @@ JAMO_FIX = {"0": "ㅇ", "O": "ㅇ", "o": "ㅇ", "Q": "ㅇ", "으": "ㅇ", "이":
             "프": "ㅍ", "표": "ㅍ", "드": "ㄷ", "그": "ㄱ", "느": "ㄴ", "르": "ㄹ", "므": "ㅁ",
             "브": "ㅂ", "스": "ㅅ", "즈": "ㅈ", "츠": "ㅊ", "크": "ㅋ", "트": "ㅌ", "흐": "ㅎ"}
 
+def _vol_pick(hits, txt):
+    """복본(v.1/v.2) 다의성은 읽힌 권차로 판별."""
+    mv = re.search(r"[vV]\.?(\d+)", txt)
+    if mv:
+        vhits = [c for c in hits if re.match(r"^[vV]?\.?0*%s$" % mv.group(1), c["call"].split("-")[-1])]
+        if len(vhits) == 1: return vhits[0]
+    if len({c["call"] for c in hits}) == 1: return hits[0]
+    return None
+
 def match(txt):
-    t = nn(txt)
+    # 권차 수술(07-14): 걷기 909~911 미판독 10권의 진범은 검출·인식이 아니라 매칭이었다.
+    # ①권차 토큰이 분류번호-저자 사이에 끼면('911 v.1 이15ㄱ') 인접 정규식이 끊김 → 매칭 전 제거
+    # ②복본 다의성은 권차로 판별(폴백 포함) ③첫 글자만 오독(상↔싱)은 나머지 완전일치 유일 후보 인정
+    # 재채점 실측: 걷기 판독률 89%→99% (86/87), 확인율 97% — 정답지 밖 3권은 실재 확인(심65ㅎ 등)
+    t = nn(re.sub(r"[vV]\.?\d+", " ", txt))
     m = None
     for m2 in re.finditer(r"(\d{3}(?:\.\d+)?)([가-힣][0-9]{1,3}[가-힣ㄱ-ㅎ0Oo]?)", t):
         if m2.group(1) in by_cls: m = m2; break
@@ -62,18 +75,22 @@ def match(txt):
             vs = {a} | ({a[:-1]+JAMO_FIX[a[-1]]} if a[-1] in JAMO_FIX else set())
             hits = [c for c in cat if c["author"] in vs]
             if len(hits) == 1 and len(a) >= 4: best = hits[0]
+            elif len(hits) > 1 and len(a) >= 4:
+                p = _vol_pick(hits, txt)
+                if p: best = p
         return (best, 0.9) if best else (None, 0.0)
     variants = {author}
     if author[-1] in JAMO_FIX: variants.add(author[:-1] + JAMO_FIX[author[-1]])
     hits = [c for c in cands if c["author"] in variants]
     if len(hits) > 1:
-        mv = re.search(r"[vV]\.?(\d+)", txt)
-        if mv:
-            vhits = [c for c in hits if re.match(r"^[vV]?\.?0*%s$" % mv.group(1), c["call"].split("-")[-1])]
-            if len(vhits) == 1: return vhits[0], 1.0
-        if len({c["call"] for c in hits}) == 1: return hits[0], 1.0
-        return None, 1.0
+        p = _vol_pick(hits, txt)
+        return (p, 1.0) if p else (None, 1.0)
     if len(hits) == 1: return hits[0], 1.0
+    h3 = [c for c in cands if len(c["author"]) == len(author) and c["author"][1:] == author[1:]
+          and c["author"][:1] != author[:1]]
+    if len({c["author"] for c in h3}) == 1:
+        p = _vol_pick(h3, txt) if len(h3) > 1 else h3[0]
+        if p: return p, 0.95
     def digit_ok(c):
         da, dc = re.sub(r"\D", "", author), re.sub(r"\D", "", c["author"])
         return not (len(da) == len(dc) and da != dc)
@@ -159,6 +176,8 @@ def ocr_tokens(img, eng=None, chunk=1280, ov=120, maxh=1000, up=True):
         interp = cv2.INTER_LANCZOS4 if f > 1 else cv2.INTER_AREA
         img = cv2.resize(img, None, fx=f, fy=f, interpolation=interp)
         h, w = img.shape[:2]
+    if f > 1: ov = int(ov*f)   # 겹침은 원본 기준 유지 — ×3 확대 시 120px이 원본 40px로 줄어
+                               # 라벨 폭(~90px)보다 좁아져 청크 경계 라벨이 통째로 유실됐음 (f00060 13→10 실측)
     out2 = []
     if max(h, w) <= chunk + ov:
         out2 = _ocr_once(img, eng)
@@ -206,6 +225,10 @@ for ri, rboxes in enumerate(rows_of_boxes):
                    max(p[0] for p in pts), max(p[1] for p in pts)))
     sy0 = max(0, int(min(b[1] for b in rb)))
     sy1 = min(H, int(max(b[3] for b in rb)))
+    # 기각 실험(07-13): 동영상 프레임에서 v2 검출이 책등 전체 박스(높이 305px↑)를 뱉어 스트립이
+    # 두꺼워지고 ×3 업스케일 미발동 → 걷기 판독률 89% vs 휴리스틱 95%. 하단 45% 슬라이스로 절단
+    # 시도 → 4프레임 실측 +1/-2 혼조·속도 2배 악화로 기각. 근본 원인은 검출기 학습 데이터(동영상
+    # 라벨 박스가 느슨) — 수술은 파이프라인이 아니라 YOLO v3 재학습(타이트 라벨)에서.
     key = f"r{ri}_{sy0}_{sy1}_{deg:.1f}"
     rot = cv2.warpAffine(bgr, M, (W, H)) if abs(deg) > 1.5 else bgr
     if key in tok_cache:
@@ -234,6 +257,30 @@ for ri, rboxes in enumerate(rows_of_boxes):
                          "call": row["call"] if row else None,
                          "title": row["title"][:20] if row else None,
                          "how": "청구기호" if row else None, "score": round(sc, 2)})
+    # ── 클러스터 채널(병렬): 전체 토큰을 x-연쇄로 묶어 독립 매칭 — 미검출 라벨(재현율 밖) 회수 ──
+    # 걷기 151프레임 실측: 박스 배정만으로 판독률 89% vs 휴리스틱 95% — 미검출 책의 토큰이 이웃
+    # 박스에 흡수돼 유실. 미배정 토큰만 쓰는 폴백은 촘촘한 프레임에서 미발동(캡 60px > 박스 간격 33px)
+    # 이라 기각. 박스 배정은 그대로 두고 휴리스틱 클러스터 매칭을 병렬 채널로 — call 중복만 제거.
+    have = {z["call"] for z in this_row if z["call"]}
+    n_fb = 0
+    if toks and rb:
+        wmed = float(np.median([b[2]-b[0] for b in rb]))
+        ts = sorted(toks, key=lambda t: t[1])
+        cl = [[ts[0]]]
+        for t in ts[1:]:
+            if t[1] - cl[-1][-1][1] > wmed*0.7: cl.append([])
+            cl[-1].append(t)
+        for c2 in cl:
+            txt = " ".join(t[0] for t in sorted(c2, key=lambda t: (round(t[2]/30), t[1])))
+            row, sc = match(txt)
+            if not row or row["call"] in have: continue
+            xs = [t[1] for t in c2]
+            fb = (min(xs)-wmed*0.4, sy0, max(xs)+wmed*0.4, sy1)
+            this_row.append({"box": [int(v) for v in fb], "rbox": fb, "band": ri, "read": txt,
+                             "call": row["call"], "title": row["title"][:20],
+                             "how": "청구기호", "score": round(sc, 2)})
+            have.add(row["call"]); n_fb += 1
+    if n_fb: print(f"[줄{ri}] 클러스터 채널 +{n_fb}권 (미검출 라벨 회수)")
     # ── 제목 복구 (daelim_closeup 검증본 이식): 미매칭 박스는 라벨 위 제목 기둥을 기존 rec으로 ──
     n_rec = 0
     prev_bottom = rows_bottom.get(ri-1, 0)
@@ -298,6 +345,41 @@ n_call = sum(1 for z in rows_out if z["call"])
 uniq = len({z["call"] for z in rows_out if z["call"]})
 print(f"[매칭] {n_call}/{len(rows_out)} 박스 · 고유 {uniq}권")
 
+# ── 행별 순서(LIS) 오배열 판정 — daelim_closeup 검증본 이식 (4축 완성: 검출→인식→대조→판정) ──
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+def hkey(ch):
+    o = ord(ch)
+    if 0xAC00 <= o <= 0xD7A3:
+        i = o - 0xAC00
+        return (i//588, i%588//28 + 1, i%28)
+    if ch in _CHO: return (_CHO.index(ch), 0, 0)
+    return (ord(ch)+100, 0, 0)
+def authkey(a):
+    m = re.match(r"^([가-힣A-Z]+)(\d*)(.*)$", a)
+    if not m: return (a,)
+    head, num, tail = m.groups()
+    return (tuple(hkey(c) for c in head),
+            float("0." + num) if num else 0,       # 커터 번호는 소수 취급: 295(.295) < 58(.58)
+            tuple(hkey(c) for c in tail))
+def sortkey(call):
+    p = call.split("-"); cls2 = re.sub(r"^[가-힣A-Z]+", "", p[0])
+    vol = 0
+    if len(p) > 2:
+        mv = re.search(r"\d+", p[2]); vol = int(mv.group(0)) if mv else 0
+    return (float(cls2) if re.match(r"^[\d.]+$", cls2) else 999,
+            authkey(nn(p[1])) if len(p) > 1 else (), vol)
+import libar_ondevice as L
+n_mis = 0
+for bi2 in {z["band"] for z in rows_out}:
+    seq = [z for z in rows_out if z["band"] == bi2 and z["call"]]
+    seq.sort(key=lambda z: z["box"][0])
+    mis = L.lis_misplaced([sortkey(z["call"]) for z in seq])
+    for j, z in enumerate(seq):
+        # 플래그는 직독만: 제목복구는 퍼지 매칭(오지정 가능)이라 오배열 경보의 근거로 쓰지 않는다
+        z["mis"] = (j in mis) and z["how"] == "청구기호"
+        if z["mis"]: n_mis += 1
+if n_mis: print(f"[오배열 의심] {n_mis}건")
+
 # ── AR 렌더 + 저장 ──
 im = im0.convert("RGBA")
 d = ImageDraw.Draw(im, "RGBA")
@@ -306,6 +388,7 @@ except Exception: fs = ImageFont.load_default()
 for z in rows_out:
     x0, y0, x1, y1 = z["box"]
     if z["call"] is None: c = (150, 150, 150)
+    elif z.get("mis"): c = (235, 60, 60)
     elif z["how"] == "제목복구": c = (50, 130, 240)
     else: c = (40, 190, 90)
     d.rectangle([x0, y0, x1, y1], outline=c+(255,), width=6)

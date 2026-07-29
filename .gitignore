@@ -67,3 +67,7 @@ libar-sample/daelim_det0_boxes.json
 libar-sample/fix_column_result.json
 libar-sample/vol_crop_results.json
 libar-sample/학습기록_*.csv
+libar-sample/webdemo/demo/
+libar-sample/webdemo/tests/node_modules/
+libar-sample/webdemo/label_batch.json
+libar-sample/yolo_labelset_v5/
