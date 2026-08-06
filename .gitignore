@@ -71,3 +71,36 @@ libar-sample/webdemo/demo/
 libar-sample/webdemo/tests/node_modules/
 libar-sample/webdemo/label_batch.json
 libar-sample/yolo_labelset_v5/
+
+# ── 개인정보·제출서류 (커밋 절대 금지: 서명·생년월일·연락처) ──
+*서명*
+*참가신청서*
+제출서류_*.pdf
+제출_1차서류심사/
+*.hwp
+
+# ── 원고 (실명 파일명·최종본은 제출 아카이브로 관리) ──
+LibAR 26*.docx
+LibAR 최종본.docx
+
+# ── 외부 원본 자료 ──
+2025 도서관 데이터*.pdf
+사서추천도서_OPENAPI_GUIDE*.doc
+
+# ── 실험 산출물·현장 데이터 (재생성 가능 or 용량) ──
+libar-sample/catalog_1860_backup.json
+libar-sample/yolo_labelset_v4/
+libar-sample/hybrid_v3_results/
+libar-sample/리포트수신함/
+libar-sample/walk_v2_snapshot.json
+libar-sample/popular_daelim.json
+libar-sample/recommend_daelim.json
+libar-sample/diag_*.jpg
+libar-sample/얇은 책.jpg
+libar-sample/webdemo/debug_*
+libar-sample/webdemo/*_result.txt
+libar-sample/webdemo/tune_rec.txt
+libar-sample/webdemo/test.jpg
+libar-sample/webdemo/tests/_*
+원고사진후보/
+도서찾기_핀_예시*.png
