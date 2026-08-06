@@ -32,6 +32,7 @@ flowchart LR
 | rec v6·v7 | ❌ 기각 | 선택 편향 → 정보 한계로 수렴 ([회고 리포트](팀공유리포트/팀공유_rec학습실험_v5-v7_회고_260718.md)) | [eval_v6_ab.py](eval_v6_ab.py) · [eval_v7_ab.py](eval_v7_ab.py) |
 | rec v8 (고해상 재료 재도전) | ❌ 기각 · **축 종결** | 정보 한계 해소 후에도 하락 = 병목은 학습량. 4연속 기각으로 파인튜닝 축을 닫고 성장 축을 로직·픽셀·UX로 확정 | [eval_v8_ab.py](eval_v8_ab.py) · [eval_v8_diff.py](eval_v8_diff.py) |
 | fp16 압축 | ✅ 채택 | 현장 평가셋 전수 비교 손실 0 | [webdemo/quantize_rec.py](webdemo/quantize_rec.py) · [eval_fp16_full.py](eval_fp16_full.py) |
+| 고전 신호처리 전처리 (Lanczos·CLAHE·Richardson-Lucy 디컨볼루션) | ❌ 기각 | 6변형 전부 공식 평가셋 기준 이하 — 필터는 소실된 획 정보를 만들지 못하고, 열화 도메인을 학습한 인식기에 전처리가 역효과. SR(FSRCNN) 기각과 함께 "정보 소실 대역" 진단을 재확인 | [eval_filters_ab.py](eval_filters_ab.py) |
 | 위험도 예측 (오배열 × 구간 특성) | ✅ 채택 | 177구간 점수화 — 실제 문제 9곳 중 7곳이 상위 절반 | [mashup_risk.py](mashup_risk.py) |
 
 > 정확도 89→99%의 마지막 도약은 **재학습이 아니라 매칭 로직 수술**에서 나왔습니다.
