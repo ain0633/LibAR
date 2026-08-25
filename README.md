@@ -63,6 +63,11 @@ flowchart LR
 | 판정 논리 | 퍼지 매칭 + 제목 이중인식 + LIS + 행 문맥 검증 | Python↔JS 골든 파리티 144/144 |
 | 품질 게이트 | 자동 검사 17종 (`webdemo/tests/run_all.mjs`) | 전부 PASS여야 배포 — 새 경로엔 테스트 동승 규칙 |
 
+## 모델 다운로드
+
+학습된 가중치 4종(YOLO26n 라벨 검출 .pt/.onnx · DB 텍스트줄 검출 · PP-OCRv5 인식기 fp16)은 **[GitHub Release v1.0](https://github.com/ain0633/LibAR/releases/tag/v1.0)** 에서 받을 수 있습니다.
+역할·학습 데이터·사용법·라이선스는 [MODELS.md](MODELS.md)에 정리했습니다.
+
 ## 개발 기록 — 실패까지 포함한 서사
 
 8주간의 실증 리포트가 [`libar-sample/팀공유리포트/`](libar-sample/팀공유리포트/)에 날짜순으로 쌓여 있습니다. 성공만 고르지 않았습니다:
@@ -91,4 +96,4 @@ flowchart LR
 
 ---
 
-라이선스: [LICENSE](LICENSE) 참조 (All rights reserved — 공모전 출품작). 장서 데이터는 실증 도서관 제공분으로 저장소에 포함하지 않습니다.
+라이선스: **AGPL-3.0** — [LICENSE](LICENSE) · Copyright (c) 2026 Ain Lee (ain0633). 코드·모델을 사용·수정·재배포(네트워크 서비스 포함)할 때는 저작권 표시를 유지하고 파생 소스를 같은 라이선스로 공개해야 합니다. 서드파티(Ultralytics YOLO AGPL-3.0 · PaddleOCR Apache-2.0 · ONNX Runtime Web MIT)는 각자의 라이선스를 따릅니다. 장서 데이터는 실증 도서관 제공분으로 저장소에 포함하지 않습니다.

@@ -53,7 +53,8 @@ flowchart LR
 
 ## 재현 안내
 
-모델 가중치·현장 사진·실제 장서 데이터는 용량·제공처 정책상 저장소에 없습니다 (`books.csv`는 가상 검증용 샘플).
+모델 가중치는 용량 때문에 저장소가 아니라 [GitHub Release v1.0](https://github.com/ain0633/LibAR/releases/tag/v1.0)으로 배포합니다 (모델 카드: [MODELS.md](../MODELS.md)).
+현장 사진·실제 장서 데이터는 제공처 정책상 저장소에 없습니다 (`books.csv`는 가상 검증용 샘플).
 동작 확인은 [공개 데모](https://ainsof.dev/libar-demo/)에서 즉시 가능하고, 판정 로직의 Python↔JS 일치는
 `webdemo/tests/`의 골든 파리티(144/144)로 검증됩니다.
 
