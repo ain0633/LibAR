@@ -83,7 +83,6 @@ flowchart LR
 | [`libar-sample/webdemo/`](libar-sample/webdemo/) | **서비스 본체** — 온디바이스 웹앱(app.html), 판정 모듈(libar_rec.js), 배포 게이트 17종(tests/) |
 | [`libar-sample/팀공유리포트/`](libar-sample/팀공유리포트/) | 실증 리포트·회고·현장 사진 (개발 서사) |
 | [`libar-sample/README.md`](libar-sample/README.md) | **연구 트랙 지도** — 데이터 구축→학습→평가 파이프라인, 실험 계보(채택/기각)와 각 근거 스크립트 |
-| [`Library_AR_Book_Detection_PRD.md`](Library_AR_Book_Detection_PRD.md) | 제품 요구사항 정의서 |
 | `scripts/` | 원고 생성 등 보조 도구 |
 | [ain0633/libar-demo](https://github.com/ain0633/libar-demo) | 공개 데모 배포본 (GitHub Pages) |
 
