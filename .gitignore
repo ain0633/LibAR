@@ -79,6 +79,9 @@ libar-sample/yolo_labelset_v5/
 제출_1차서류심사/
 *.hwp
 
+# ── 내부 기획 문서 (로컬 보관, 저장소 비공개) ──
+Library_AR_Book_Detection_PRD.md
+
 # ── 원고 (실명 파일명·최종본은 제출 아카이브로 관리) ──
 LibAR 26*.docx
 LibAR 최종본.docx
