@@ -57,7 +57,8 @@ flowchart LR
 
 | 구분 | 기술 | 비고 |
 | :--- | :--- | :--- |
-| 라벨 검출 | Ultralytics YOLO26n → ONNX (4.5MB) | 실증관 사진 7,000여 박스 자체 구축·전이학습 |
+| 라벨 검출 | Ultralytics YOLO26n → ONNX (11MB) | 실증관 사진 7,000여 박스 자체 구축·전이학습 |
+| 텍스트줄 검출 | PaddleOCR mobile det (DB) → ONNX (4.7MB) | 재학습 없음, 라벨 내부 글자 줄 분리 |
 | 문자 인식 | PaddleOCR korean PP-OCRv5 → ONNX fp16 (48MB) | 실측 라벨 702줄+합성 데이터 파인튜닝, 압축 손실 0 검증 |
 | 실행 환경 | ONNX Runtime Web (WebGPU / WASM 자동 폴백) | 단일 HTML SPA — 무설치·정적 배포·오프라인 동작을 위한 의도적 선택. 판정 논리는 libar_rec.js로 분리해 Python과 골든 파리티로 품질 보증 |
 | 판정 논리 | 퍼지 매칭 + 제목 이중인식 + LIS + 행 문맥 검증 | Python↔JS 골든 파리티 144/144 |
